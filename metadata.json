@@ -1,0 +1,6 @@
+{
+  "name": "AI & Tech News Ingestion Platform",
+  "description": "Production-grade, multi-source news and research ingestion pipeline with protocol adapters, connectors, deduplication, and normalized API delivery.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
