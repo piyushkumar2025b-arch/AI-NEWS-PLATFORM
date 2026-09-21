@@ -127,9 +127,11 @@ export default function App() {
   };
 
   // 1. Fetch News Feed with full 404/500 error interception
-  const fetchNews = useCallback(async () => {
+  const fetchNews = useCallback(async (isBackground = false) => {
     try {
-      setLoading(true);
+      if (!isBackground) {
+        setLoading(true);
+      }
       setFeedError(null);
       let url = '/api/v1/news?limit=100';
 
@@ -155,22 +157,28 @@ export default function App() {
 
       const res = await safeFetch<Article[]>(url);
       if (!res.ok) {
-        setFeedError({
-          status: res.status,
-          message: res.error || 'Failed to retrieve articles from the news feed API'
-        });
-        setArticles([]);
+        if (!isBackground) {
+          setFeedError({
+            status: res.status,
+            message: res.error || 'Failed to retrieve articles from the news feed API'
+          });
+          setArticles([]);
+        }
       } else {
         setArticles(Array.isArray(res.data) ? res.data : []);
       }
     } catch (err: any) {
-      setFeedError({
-        status: 0,
-        message: err.message || 'An unexpected error occurred while loading news feed'
-      });
-      setArticles([]);
+      if (!isBackground) {
+        setFeedError({
+          status: 0,
+          message: err.message || 'An unexpected error occurred while loading news feed'
+        });
+        setArticles([]);
+      }
     } finally {
-      setLoading(false);
+      if (!isBackground) {
+        setLoading(false);
+      }
     }
   }, [activeSearch, selectedCategory, selectedSourceType, selectedSourceId, selectedRegion, selectedSort]);
 
@@ -215,13 +223,21 @@ export default function App() {
     fetchNews();
   }, [fetchNews]);
 
-  // Auto-refresh telemetry every 25s
+  // Auto-refresh telemetry every 25s and feed every 30s
   useEffect(() => {
-    const timer = setInterval(() => {
+    const telemetryTimer = setInterval(() => {
       fetchSystemData();
     }, 25000);
-    return () => clearInterval(timer);
-  }, [fetchSystemData]);
+
+    const newsTimer = setInterval(() => {
+      fetchNews(true);
+    }, 30000);
+
+    return () => {
+      clearInterval(telemetryTimer);
+      clearInterval(newsTimer);
+    };
+  }, [fetchSystemData, fetchNews]);
 
   // Handle Search Submission
   const handleSearchSubmit = (e: React.FormEvent) => {
@@ -261,7 +277,7 @@ export default function App() {
       if (operationId) {
         // Poll status until completed or timed out
         let pollCount = 0;
-        const maxPolls = 40;
+        const maxPolls = 120;
         const interval = setInterval(async () => {
           pollCount++;
           const statusRes = await safeFetch<{

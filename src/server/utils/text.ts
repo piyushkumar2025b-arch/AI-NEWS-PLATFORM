@@ -1,15 +1,55 @@
+const NAMED_HTML_ENTITIES: Record<string, string> = {
+  '&amp;': '&',
+  '&lt;': '<',
+  '&gt;': '>',
+  '&quot;': '"',
+  '&#39;': "'",
+  '&apos;': "'",
+  '&nbsp;': ' ',
+  '&mdash;': '—',
+  '&ndash;': '–',
+  '&hellip;': '…',
+  '&ldquo;': '“',
+  '&rdquo;': '”',
+  '&lsquo;': '‘',
+  '&rsquo;': '’',
+  '&laquo;': '«',
+  '&raquo;': '»',
+  '&copy;': '©',
+  '&trade;': '™',
+  '&reg;': '®',
+  '&bull;': '•',
+  '&middot;': '·',
+  '&euro;': '€',
+  '&pound;': '£',
+  '&yen;': '¥',
+  '&cent;': '¢',
+  '&sect;': '§',
+  '&para;': '¶',
+  '&dagger;': '†',
+  '&Dagger;': '‡',
+  '&prime;': '′',
+  '&Prime;': '″',
+  '&shy;': '',
+};
+
 export function decodeHtmlEntities(str: string): string {
   if (!str) return '';
-  return str
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&apos;/g, "'")
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(Number(dec)))
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+  let res = str;
+  for (const [entity, char] of Object.entries(NAMED_HTML_ENTITIES)) {
+    if (res.includes(entity)) {
+      res = res.replaceAll(entity, char);
+    }
+  }
+  return res
+    .replace(/&#(\d+);/g, (_, dec) => {
+      const code = Number(dec);
+      return code > 0 && code < 65536 ? String.fromCharCode(code) : '';
+    })
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => {
+      const code = parseInt(hex, 16);
+      return code > 0 && code < 65536 ? String.fromCharCode(code) : '';
+    });
 }
 
 export function stripHtml(html: string): string {

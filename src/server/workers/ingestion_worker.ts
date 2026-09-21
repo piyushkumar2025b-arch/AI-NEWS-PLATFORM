@@ -62,12 +62,18 @@ async function fetchFromConnector(connector: any, options: { limit?: number } = 
       return [];
     })();
 
-    // 7-second safeguard timeout per source to prevent hanging sockets
+    // 7-second safeguard timeout per source to prevent hanging sockets with proper cleanup
+    let timer: NodeJS.Timeout | undefined;
     const timeoutPromise = new Promise<any[]>((resolve) => {
-      setTimeout(() => resolve([]), 7000);
+      timer = setTimeout(() => resolve([]), 7000);
+      timer.unref?.();
     });
 
-    return await Promise.race([fetchPromise, timeoutPromise]);
+    try {
+      return await Promise.race([fetchPromise, timeoutPromise]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   } catch (err: any) {
     logger.warn(`Fetch error for connector '${connector?.getSourceId?.() || 'unknown'}': ${err.message}`);
   }
@@ -114,7 +120,7 @@ export class IngestionWorker {
     // Asynchronously run ingestion in background with controlled concurrency
     (async () => {
       logger.info(`Starting ingestion run ${operationId} for ${activeConnectors.length} active sources`);
-      const CONCURRENCY = 5;
+      const CONCURRENCY = 12;
       let currentIndex = 0;
 
       async function worker() {

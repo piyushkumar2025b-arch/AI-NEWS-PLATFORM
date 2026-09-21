@@ -292,6 +292,102 @@ const CURATED_PACKS: CuratedPack[] = [
     description: 'Hard-hitting investigations into AI ethics, platform monopolies, and digital rights from 404 Media, Platformer, Garbage Day, Techdirt, and The Information.',
     icon: Globe,
     sourceIds: ['four_zero_four_media', 'platformer_news', 'garbage_day', 'techdirt', 'the_information_tech', 'semafor_tech']
+  },
+  {
+    id: 'scale_engineering_unicorns',
+    name: 'Hyperscale & High-Concurrency Systems',
+    badge: 'Scale Infra',
+    description: 'Battle-tested production systems, streaming data, and platform scale from Uber, Pinterest, DoorDash, Lyft, LinkedIn, PayPal, eBay, Etsy, Salesforce, Atlassian, Block, and Box.',
+    icon: Layers,
+    sourceIds: ['uber_engineering', 'pinterest_engineering', 'doordash_engineering', 'lyft_engineering', 'linkedin_engineering', 'paypal_engineering', 'ebay_tech', 'etsy_codeascraft', 'salesforce_engineering', 'atlassian_developer', 'square_corner', 'box_tech']
+  },
+  {
+    id: 'physical_robotics_ai',
+    name: 'Humanoid Robotics & Embodied Physical AI',
+    badge: 'Physical AI',
+    description: 'Dynamic bipedal kinematics, neural visuomotor policies, and warehouse manipulation from Boston Dynamics, Figure AI, Sanctuary AI, Unitree, Covariant, Skild AI, and Agility Robotics.',
+    icon: Bot,
+    sourceIds: ['boston_dynamics_news', 'figure_ai_blog', 'sanctuary_ai_blog', 'unitree_robotics', 'covariant_ai', 'skild_ai', 'physical_intelligence', 'agility_robotics']
+  },
+  {
+    id: 'silicon_fabs_hpc',
+    name: 'Semiconductor Fabs, Silicon & Hardware Architecture',
+    badge: 'Foundry & Silicon',
+    description: 'Sub-2nm nodes, High-NA EUV optics, ARMv9, RISC-V, and GPU acceleration from TSMC, ASML, Arm Community, RISC-V International, Qualcomm, Intel, AMD, Synopsys, and Cadence.',
+    icon: Cpu,
+    sourceIds: ['tsmc_news', 'asml_insights', 'arm_community', 'riscv_international', 'qualcomm_developer', 'intel_newsroom', 'amd_community_blog', 'synopsys_blog', 'cadence_design']
+  },
+  {
+    id: 'masterclass_tech_educators',
+    name: 'Technical Masterclasses & Systems Creators',
+    badge: 'Masterclass',
+    description: 'Deep neural network builds, algorithm visualizations, and systems programming from Andrej Karpathy, Yannic Kilcher, The Primeagen, NetworkChuck, NeetCode, Hussein Nasser, and Jon Gjengset.',
+    icon: Video,
+    sourceIds: ['youtube_andrej_karpathy', 'youtube_yannic_kilcher', 'youtube_primeagen', 'youtube_networkchuck', 'youtube_neetcode', 'youtube_hussein_nasser', 'youtube_george_hotz', 'youtube_jeff_heaton', 'youtube_low_level_learning', 'youtube_jon_gjengset']
+  },
+  {
+    id: 'quantum_aerospace_deeptech',
+    name: 'Quantum Computing & Deep Space Exploration',
+    badge: 'Quantum & Space',
+    description: 'Transmon processors, photonic quantum error correction, and deep space telemetry from IBM Quantum, Google Quantum AI, Quanta Magazine, NASA Tech, ESA, and Ars Technica Space.',
+    icon: Rocket,
+    sourceIds: ['ibm_quantum', 'google_quantum_ai', 'quanta_magazine', 'nasa_tech', 'esa_technology', 'ars_technica_space', 'ionq_news', 'xanadu_pennylane']
+  },
+  {
+    id: 'autonomous_mobility_vision',
+    name: 'Autonomous Mobility, AVs & Edge Vision',
+    badge: 'Autonomous AVs',
+    description: 'Foundation perception models, urban path planning, and edge camera pipelines from Waymo, Cruise, Zoox, Aurora, comma.ai, and OpenCV.',
+    icon: Bot,
+    sourceIds: ['waymo_blog', 'cruise_autonomy', 'zoox_blog', 'aurora_innovation', 'comma_ai', 'opencv_official', 'open_robotics_ros']
+  },
+  {
+    id: 'global_fintech_hypergrowth',
+    name: 'Global Hyper-Scale & Neo-Banking Platforms',
+    badge: 'Global Scale',
+    description: 'Global super-app scale, high-throughput financial ledgers, and low-latency dispatch from Grab, Gojek, Mercado Libre, Booking.com, Monzo, Revolut, Wise, and Swiggy.',
+    icon: Globe,
+    sourceIds: ['grab_tech', 'gojek_tech', 'mercadolibre_tech', 'booking_tech', 'monzo_tech', 'revolut_tech', 'wise_engineering', 'swiggy_tech', 'flipkart_engineering', 'spotify_rd']
+  },
+  {
+    id: 'modern_web_systems_toolchains',
+    name: 'Modern Web Architecture & Native Toolchains',
+    badge: 'Web Toolchain',
+    description: 'Full-stack type safety, reactivity primitives, and high-performance native engines from TanStack, Anthony Fu, Overreacted, Kent C. Dodds, Josh W. Comeau, Nuxt, Remix, and Biome.',
+    icon: Terminal,
+    sourceIds: ['tanstack_blog', 'anthony_fu_blog', 'overreacted_dan', 'kentcdodds_blog', 'joshwcomeau_blog', 'nuxt_blog', 'remix_run_blog', 'biomejs_blog', 'v8_js_engine', 'tauri_apps_blog']
+  },
+  {
+    id: 'ai_safety_evals_alignment',
+    name: 'AI Safety, Evaluations & Alignment',
+    badge: 'Safety & Evals',
+    description: 'Rigorous empirical evals, interpretability, and AI alignment from METR Evals, UK AI Safety Institute, Apollo Research, Redwood Research, and Safe.ai.',
+    icon: Shield,
+    sourceIds: ['metr_evals', 'uk_ai_safety_inst', 'apollo_research_blog', 'redwood_research', 'safe_ai_center', 'arc_evals_safety', 'translucent_ai']
+  },
+  {
+    id: 'cloud_native_ebpf_compilers',
+    name: 'Cloud-Native, eBPF & Systems Compilers',
+    badge: 'eBPF & Compilers',
+    description: 'Kernel tracing, LLVM compiler infrastructure, and container networking from CNCF, Isovalent eBPF, LLVM Project, Cilium, and Bytecode Alliance.',
+    icon: Terminal,
+    sourceIds: ['cncf_blog', 'isovalent_ebpf', 'llvm_project_blog', 'cilium_network', 'envoy_proxy_blog', 'wasmer_blog', 'bytecode_alliance']
+  },
+  {
+    id: 'neurotech_fusion_cleanenergy',
+    name: 'Neurotech, Clean Fusion & Deep Hardware',
+    badge: 'Deep Frontier',
+    description: 'Brain-computer interfaces, commercial fusion power, and datacenter hardware from Neuralink, Commonwealth Fusion, Helion Energy, ServeTheHome, and Tenstorrent.',
+    icon: Microscope,
+    sourceIds: ['neuralink_progress', 'commonwealth_fusion', 'helion_energy', 'servethehome_sth', 'tenstorrent_ai', 'black_forest_labs']
+  },
+  {
+    id: 'autonomous_logistics_global_scale',
+    name: 'Autonomous Logistics & Global Scale Engineering',
+    badge: 'Global Scale',
+    description: 'Autonomous drone delivery, autonomous maritime surface vessels, and global infrastructure from Zipline, Saildrone, Nubank, MercadoLibre, and Canva.',
+    icon: Layers,
+    sourceIds: ['zipline_tech', 'saildrone_tech', 'nubank_engineering', 'mercadolibre_dev', 'canva_engineering', 'elevenlabs_tech']
   }
 ];
 

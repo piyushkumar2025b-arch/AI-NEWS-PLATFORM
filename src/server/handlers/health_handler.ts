@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { newsRepository } from '../database/repository.js';
 import { cacheService } from '../cache/cache_service.js';
+import { scheduler } from '../workers/scheduler.js';
 
 export class HealthHandler {
   async getHealth(req: Request, res: Response, _next: NextFunction) {
@@ -8,6 +9,7 @@ export class HealthHandler {
     const cacheStats = cacheService.getStats();
     const mem = process.memoryUsage();
     const uptimeSec = Math.round(process.uptime());
+    const schedulerStatus = scheduler.getStatus();
 
     const healthPayload = {
       status: 'healthy',
@@ -17,8 +19,13 @@ export class HealthHandler {
         total: stats.totalSources
       },
       scheduler: {
-        isRunning: true,
-        activeTimersCount: 1
+        isRunning: schedulerStatus.isRunning,
+        activeTimersCount: schedulerStatus.isRunning ? 1 : 0,
+        intervalMinutes: schedulerStatus.intervalMinutes,
+        cycleCount: schedulerStatus.cycleCount,
+        lastCycleStartedAt: schedulerStatus.lastCycleStartedAt,
+        lastCycleCompletedAt: schedulerStatus.lastCycleCompletedAt,
+        nextCycleAt: schedulerStatus.nextCycleAt
       },
       cache: {
         activeKeys: cacheStats.activeKeys || 0

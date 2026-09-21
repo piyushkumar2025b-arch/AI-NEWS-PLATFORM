@@ -45,12 +45,20 @@ export function formatTimeAgo(dateStr: string): string {
   const d = new Date(dateStr);
   if (isNaN(d.getTime())) return 'Recently';
 
-  const elapsedSec = Math.floor((Date.now() - d.getTime()) / 1000);
+  const diffMs = Date.now() - d.getTime();
+  // Future dates or timezone skew tolerance
+  if (diffMs < 0) return 'Just now';
+
+  const elapsedSec = Math.floor(diffMs / 1000);
   if (elapsedSec < 60) return `${Math.max(1, elapsedSec)}s ago`;
   const elapsedMin = Math.floor(elapsedSec / 60);
   if (elapsedMin < 60) return `${elapsedMin}m ago`;
   const elapsedHours = Math.floor(elapsedMin / 60);
   if (elapsedHours < 24) return `${elapsedHours}h ago`;
   const elapsedDays = Math.floor(elapsedHours / 24);
-  return `${elapsedDays}d ago`;
+  if (elapsedDays < 30) return `${elapsedDays}d ago`;
+  const elapsedMonths = Math.floor(elapsedDays / 30);
+  if (elapsedMonths < 12) return `${elapsedMonths}mo ago`;
+  const elapsedYears = Math.floor(elapsedDays / 365);
+  return `${elapsedYears}y ago`;
 }
