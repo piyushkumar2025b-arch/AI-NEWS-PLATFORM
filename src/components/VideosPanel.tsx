@@ -367,6 +367,7 @@ export const VideosPanel: React.FC<VideosPanelProps> = ({
                   <MediaRenderer
                     media={video.media}
                     fallbackImageUrl={video.image_url}
+                    articleUrl={video.canonical_url || video.url}
                     title={video.title}
                     category="video"
                     source={video.source}

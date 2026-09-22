@@ -135,6 +135,9 @@ export class MediaHandler {
       // Check negative cache
       const negExpires = this.negativeCache.get(cacheKey);
       if (negExpires && negExpires > Date.now()) {
+        if (fallbackTitle) {
+          return this.sendFallbackCard(res, fallbackTitle, fallbackCat, fallbackSource, fallbackDomain);
+        }
         return res.status(404).end();
       }
 
@@ -142,6 +145,9 @@ export class MediaHandler {
       if (mediaResolver.isPrivateOrRestrictedHost(parsed.hostname)) {
         logger.warn(`Media proxy blocked restricted host: ${parsed.hostname}`);
         this.negativeCache.set(cacheKey, Date.now() + this.negativeTtlMs);
+        if (fallbackTitle) {
+          return this.sendFallbackCard(res, fallbackTitle, fallbackCat, fallbackSource, fallbackDomain);
+        }
         return res.status(403).end();
       }
 
@@ -149,6 +155,9 @@ export class MediaHandler {
       if (!isSafe) {
         logger.warn(`Media proxy blocked unsafe host via DNS: ${parsed.hostname}`);
         this.negativeCache.set(cacheKey, Date.now() + this.negativeTtlMs);
+        if (fallbackTitle) {
+          return this.sendFallbackCard(res, fallbackTitle, fallbackCat, fallbackSource, fallbackDomain);
+        }
         return res.status(403).end();
       }
 
@@ -156,6 +165,9 @@ export class MediaHandler {
       const result = await this.tunnelFetch(parsed, 5);
       if (!result) {
         this.negativeCache.set(cacheKey, Date.now() + this.negativeTtlMs);
+        if (fallbackTitle) {
+          return this.sendFallbackCard(res, fallbackTitle, fallbackCat, fallbackSource, fallbackDomain);
+        }
         return res.status(404).end();
       }
 
@@ -191,6 +203,9 @@ export class MediaHandler {
       return res.end(result.buffer);
     } catch (err: any) {
       logger.debug(`Proxy exception for ${rawUrl}: ${err.message}`);
+      if (fallbackTitle) {
+        return this.sendFallbackCard(res, fallbackTitle, fallbackCat, fallbackSource, fallbackDomain);
+      }
       return res.status(404).end();
     }
   }
