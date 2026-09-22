@@ -14,14 +14,34 @@ export class NormalizationPipeline {
     const id = generateArticleId((raw.url || canonicalUrl || cleanedTitle) + '_' + (raw.sourceId || ''));
     const contentHash = generateTitleFingerprint(cleanedTitle);
 
+    const mediaAssets = Array.isArray(raw.media) ? [...raw.media] : [];
+    let leadImage = raw.imageUrl || null;
+
+    // If media has an image but imageUrl is missing, populate imageUrl from media
+    if (!leadImage) {
+      const imgFromMedia = mediaAssets.find(m => m.type === 'image' && m.url);
+      if (imgFromMedia) {
+        leadImage = imgFromMedia.url;
+      }
+    }
+
+    // If leadImage exists but media has no image, populate media array with leadImage
+    if (leadImage && !mediaAssets.some(m => m.type === 'image')) {
+      mediaAssets.unshift({
+        type: 'image',
+        url: leadImage,
+        source: 'feed'
+      });
+    }
+
     return {
       id,
       title: cleanedTitle,
       description: cleanedDesc,
       url: raw.url,
       canonical_url: canonicalUrl,
-      image_url: raw.imageUrl || null,
-      media: raw.media || [],
+      image_url: leadImage,
+      media: mediaAssets,
       source: raw.sourceName || raw.sourceId,
       source_id: raw.sourceId,
       publisher: {

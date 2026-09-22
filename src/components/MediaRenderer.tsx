@@ -27,6 +27,7 @@ interface MediaRendererProps {
   domain?: string;
   className?: string;
   aspectRatio?: 'video' | 'square' | 'auto';
+  showEditorialFallback?: boolean;
 }
 
 // Fast session cache for verified successful images (0-latency re-renders)
@@ -57,7 +58,8 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
   sourceId,
   domain,
   className = '',
-  aspectRatio = 'video'
+  aspectRatio = 'video',
+  showEditorialFallback = true
 }) => {
   // Find media assets by type
   const videoAsset = media?.find(m => m.type === 'video');
@@ -371,6 +373,21 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
           <span>Video</span>
         </span>
 
+        {/* Open on external platform button */}
+        {watchUrl && (
+          <a
+            href={watchUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="absolute top-2.5 right-2.5 z-20 flex items-center gap-1 rounded-md bg-black/80 px-2 py-0.5 text-[10px] font-medium text-stone-300 hover:text-white hover:bg-black transition-colors border border-white/10 backdrop-blur-xs"
+            title="Open video in new tab"
+          >
+            <ExternalLink className="h-2.5 w-2.5" />
+            <span>Open</span>
+          </a>
+        )}
+
         {/* Click to play hint on hover */}
         <span className="absolute bottom-2.5 left-2.5 opacity-0 group-hover:opacity-100 transition-opacity text-[10px] text-stone-300 font-medium bg-black/80 px-2 py-0.5 rounded backdrop-blur-xs">
           Click to play
@@ -382,17 +399,41 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
   // 2. Audio Asset (Podcasts, Interviews)
   if (audioAsset) {
     return (
-      <div className={`flex flex-col justify-center rounded-xl border border-stone-200 bg-stone-50 p-4 ${className}`}>
-        <div className="flex items-center justify-between gap-2 mb-2">
-          <div className="flex items-center gap-1.5">
-            <Headphones className="h-4 w-4 text-emerald-600" />
-            <span className="text-xs font-semibold text-stone-800">Podcast / Audio Stream</span>
+      <div className={`flex flex-col rounded-xl overflow-hidden border border-stone-200 bg-stone-900 shadow-xs ${className}`}>
+        {finalSrc && (
+          <div className="relative aspect-[21/9] w-full overflow-hidden bg-stone-950">
+            <img
+              src={finalSrc}
+              alt={title}
+              referrerPolicy="no-referrer"
+              loading="lazy"
+              className="h-full w-full object-cover opacity-85"
+              onError={() => setCandidateIndex(prev => prev + 1)}
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-stone-900 via-transparent to-transparent" />
+            <span className="absolute top-2.5 left-2.5 inline-flex items-center gap-1 rounded-md bg-purple-950/90 text-purple-200 border border-purple-500/30 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider backdrop-blur-xs">
+              <Headphones className="h-3 w-3 text-purple-400" />
+              Podcast Episode
+            </span>
           </div>
-          <span className="text-[10px] text-stone-500 font-mono">Ready</span>
+        )}
+        <div className="p-3 bg-stone-900 border-t border-stone-800/80">
+          <div className="flex items-center justify-between gap-2 mb-1.5">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <Headphones className="h-3.5 w-3.5 text-purple-400 shrink-0" />
+              <span className="text-xs font-medium text-stone-200 truncate">{title}</span>
+            </div>
+            <span className="text-[10px] text-stone-400 font-mono shrink-0">Audio</span>
+          </div>
+          <audio
+            src={audioAsset.url}
+            controls
+            className="w-full h-8 accent-purple-500"
+            preload="none"
+          >
+            Your browser does not support audio playback.
+          </audio>
         </div>
-        <audio src={audioAsset.url} controls className="w-full h-8" preload="none">
-          Your browser does not support audio playback.
-        </audio>
       </div>
     );
   }
@@ -423,8 +464,39 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
   }
 
   // 4. Primary Image Rendering
-  // If no high-quality image exists or image failed quality filter, do NOT render synthetic slop
+  // If no high-quality image exists or image failed quality filter
   if (!finalSrc || candidateIndex >= imageCandidates.length) {
+    if (showEditorialFallback) {
+      const p = new URLSearchParams({
+        title: title || 'Tech & AI Dispatch',
+        category: category || 'technology',
+        ...(source ? { source } : {}),
+        ...(sourceId ? { sourceId } : {}),
+        ...(domain ? { domain } : {})
+      });
+      const editorialCardUrl = `/api/v1/media/card?${p.toString()}`;
+
+      return (
+        <div className={`group/media relative w-full overflow-hidden rounded-xl bg-stone-950 border border-stone-800/80 shadow-xs ${aspectClass} ${className}`}>
+          <img
+            src={editorialCardUrl}
+            alt={title || 'Editorial visual'}
+            referrerPolicy="no-referrer"
+            loading="lazy"
+            decoding="async"
+            width="640"
+            height="360"
+            className="relative z-10 h-full w-full object-cover transform-gpu transition-all duration-300 group-hover/media:scale-[1.015]"
+          />
+          {/* Source / Media Type Badge */}
+          <span
+            className={`absolute top-2.5 left-2.5 z-20 inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-semibold tracking-wider uppercase backdrop-blur-xs shadow-xs ${badgeColor}`}
+          >
+            {badgeLabel}
+          </span>
+        </div>
+      );
+    }
     return null;
   }
 

@@ -123,6 +123,24 @@ const CATEGORY_THEMES: Record<string, CardTheme> = {
     label: 'AI SECURITY & SAFETY',
     iconType: 'shield'
   },
+  'video': {
+    primary: '#ef4444',
+    secondary: '#f87171',
+    accent: '#fb923c',
+    bgGradStart: '#140606',
+    bgGradEnd: '#290c0c',
+    label: 'VIDEO & BROADCAST',
+    iconType: 'play'
+  },
+  'podcast': {
+    primary: '#a855f7',
+    secondary: '#c084fc',
+    accent: '#38bdf8',
+    bgGradStart: '#11091b',
+    bgGradEnd: '#241238',
+    label: 'PODCAST & AUDIO INTERVIEW',
+    iconType: 'mic'
+  },
   'technology': {
     primary: '#64748b',
     secondary: '#94a3b8',
@@ -142,6 +160,10 @@ interface PublisherBadge {
 }
 
 const PUBLISHER_BADGES: Record<string, PublisherBadge> = {
+  'youtube': { name: 'YouTube Video', color: '#ff0000', bg: 'rgba(255,0,0,0.18)', code: 'YT' },
+  'xai': { name: 'xAI / Grok', color: '#ffffff', bg: 'rgba(255,255,255,0.18)', code: 'xAI' },
+  'meta': { name: 'Meta FAIR', color: '#0668e1', bg: 'rgba(6,104,225,0.18)', code: 'META' },
+  'mistral': { name: 'Mistral AI', color: '#ea580c', bg: 'rgba(234,88,12,0.15)', code: 'MST' },
   'openai': { name: 'OpenAI Official', color: '#10a37f', bg: 'rgba(16,163,127,0.15)', code: 'OAI' },
   'anthropic_ai': { name: 'Anthropic / Claude', color: '#d97706', bg: 'rgba(217,119,6,0.15)', code: 'ANT' },
   'deepseek_ai': { name: 'DeepSeek AI', color: '#0284c7', bg: 'rgba(2,132,199,0.15)', code: 'DSK' },

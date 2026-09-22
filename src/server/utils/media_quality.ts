@@ -97,7 +97,7 @@ export function upgradeMediaQuality(url: string | null | undefined): string | nu
 
   // 1. YouTube Thumbnails Upgrade:
   // Convert 480x360 letterboxed hqdefault.jpg to 1280x720 16:9 full HD maxresdefault.jpg
-  const ytMatch = clean.match(/(?:youtube\.com\/(?:watch\?v=|v\/|embed\/)|youtu\.be\/|i\.ytimg\.com\/vi\/)([a-zA-Z0-9_-]{11})/);
+  const ytMatch = clean.match(/(?:youtube(?:-nocookie)?\.com\/(?:watch\?v=|v\/|embed\/|shorts\/|live\/)|youtu\.be\/|i[0-9]?\.ytimg\.com\/vi\/)([a-zA-Z0-9_-]{11})/i);
   if (ytMatch) {
     return `https://i.ytimg.com/vi/${ytMatch[1]}/maxresdefault.jpg`;
   }

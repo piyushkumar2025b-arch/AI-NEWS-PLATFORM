@@ -83,7 +83,7 @@ export function isLowQualityMedia(url: string | null | undefined): boolean {
  */
 export function extractYouTubeId(url: string | null | undefined): string | null {
   if (!url || typeof url !== 'string') return null;
-  const match = url.match(/(?:youtube\.com\/(?:watch\?v=|v\/|embed\/)|youtu\.be\/|i\.ytimg\.com\/vi\/)([a-zA-Z0-9_-]{11})/);
+  const match = url.match(/(?:youtube(?:-nocookie)?\.com\/(?:watch\?v=|v\/|embed\/|shorts\/|live\/)|youtu\.be\/|i[0-9]?\.ytimg\.com\/vi\/)([a-zA-Z0-9_-]{11})/i);
   return match ? match[1] : null;
 }
 
