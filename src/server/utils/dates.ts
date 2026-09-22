@@ -35,6 +35,10 @@ export function parseDateToISO(input: any): string {
 
   const parsed = new Date(str);
   if (!isNaN(parsed.getTime())) {
+    // Sanitize future timestamp anomalies (e.g., erroneous years like 2077 or 2121 from metadata)
+    if (parsed.getTime() > Date.now() + 7 * 86400000) {
+      return new Date().toISOString();
+    }
     return parsed.toISOString();
   }
 

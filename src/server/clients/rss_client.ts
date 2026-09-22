@@ -279,11 +279,13 @@ export class RssClient {
           let link = '';
           if (Array.isArray(entry.link)) {
             const altLink = entry.link.find(l => l['@_rel'] === 'alternate') || entry.link[0];
-            link = altLink?.['@_href'] || '';
+            link = altLink?.['@_href'] || (typeof altLink === 'string' ? altLink : this.extractText(altLink)) || '';
           } else if (entry.link?.['@_href']) {
             link = entry.link['@_href'];
           } else if (typeof entry.link === 'string') {
             link = entry.link;
+          } else if (entry.link) {
+            link = this.extractText(entry.link);
           }
 
           const description = this.extractText(entry.summary) || this.extractText(entry.content);
@@ -334,10 +336,22 @@ export class RssClient {
           };
         });
 
+        let feedLink = '';
+        if (Array.isArray(feed.link)) {
+          const altLink = feed.link.find((l: any) => l['@_rel'] === 'alternate') || feed.link[0];
+          feedLink = altLink?.['@_href'] || (typeof altLink === 'string' ? altLink : this.extractText(altLink)) || '';
+        } else if (feed.link?.['@_href']) {
+          feedLink = feed.link['@_href'];
+        } else if (typeof feed.link === 'string') {
+          feedLink = feed.link;
+        } else if (feed.link) {
+          feedLink = this.extractText(feed.link);
+        }
+
         return {
           title: this.extractText(feed.title) || 'Atom Feed',
           description: this.extractText(feed.subtitle),
-          link: feed.link?.['@_href'] || '',
+          link: feedLink,
           items
         };
       }

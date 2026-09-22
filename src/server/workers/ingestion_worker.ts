@@ -47,37 +47,32 @@ const PRIORITY_SOURCE_IDS = new Set([
 ]);
 
 async function fetchFromConnector(connector: any, options: { limit?: number } = { limit: 15 }): Promise<any[]> {
-  try {
-    const fetchPromise = (async () => {
-      if (typeof connector.fetch === 'function') {
-        const res = await connector.fetch(options);
-        if (Array.isArray(res)) return res;
-        return res?.rawItems || [];
-      }
-      if (typeof connector.fetchArticles === 'function') {
-        const res = await connector.fetchArticles(options);
-        if (Array.isArray(res)) return res;
-        return res?.rawItems || [];
-      }
-      return [];
-    })();
-
-    // 7-second safeguard timeout per source to prevent hanging sockets with proper cleanup
-    let timer: NodeJS.Timeout | undefined;
-    const timeoutPromise = new Promise<any[]>((resolve) => {
-      timer = setTimeout(() => resolve([]), 7000);
-      timer.unref?.();
-    });
-
-    try {
-      return await Promise.race([fetchPromise, timeoutPromise]);
-    } finally {
-      if (timer) clearTimeout(timer);
+  const fetchPromise = (async () => {
+    if (typeof connector.fetch === 'function') {
+      const res = await connector.fetch(options);
+      if (Array.isArray(res)) return res;
+      return res?.rawItems || [];
     }
-  } catch (err: any) {
-    logger.warn(`Fetch error for connector '${connector?.getSourceId?.() || 'unknown'}': ${err.message}`);
+    if (typeof connector.fetchArticles === 'function') {
+      const res = await connector.fetchArticles(options);
+      if (Array.isArray(res)) return res;
+      return res?.rawItems || [];
+    }
+    return [];
+  })();
+
+  // 7-second safeguard timeout per source to prevent hanging sockets with proper cleanup
+  let timer: NodeJS.Timeout | undefined;
+  const timeoutPromise = new Promise<any[]>((_, reject) => {
+    timer = setTimeout(() => reject(new Error('Connector fetch timed out after 7s')), 7000);
+    timer.unref?.();
+  });
+
+  try {
+    return await Promise.race([fetchPromise, timeoutPromise]);
+  } finally {
+    if (timer) clearTimeout(timer);
   }
-  return [];
 }
 
 export class IngestionWorker {
@@ -144,9 +139,34 @@ export class IngestionWorker {
               op.itemsReceived += batchRes.received;
               op.itemsInserted += batchRes.inserted;
               op.itemsDuplicate += batchRes.duplicates;
+            } else {
+              newsRepository.recordFetchRun({
+                sourceId,
+                sourceName,
+                status: 'success',
+                startedAt: new Date().toISOString(),
+                completedAt: new Date().toISOString(),
+                durationMs: 0,
+                itemsReceived: 0,
+                itemsInserted: 0,
+                itemsDuplicate: 0,
+                error: null
+              });
             }
           } catch (err: any) {
             op.failedSources++;
+            newsRepository.recordFetchRun({
+              sourceId,
+              sourceName,
+              status: 'failed',
+              startedAt: new Date().toISOString(),
+              completedAt: new Date().toISOString(),
+              durationMs: 0,
+              itemsReceived: 0,
+              itemsInserted: 0,
+              itemsDuplicate: 0,
+              error: err.message || 'Fetch failed'
+            });
             logger.warn(`Source '${sourceId}' ingestion failure: ${err.message}`);
           } finally {
             op.sourcesProcessed++;
@@ -194,17 +214,33 @@ export class IngestionWorker {
       throw new Error(`Source connector '${sourceId}' not found in registry`);
     }
 
-    const rawItems = await fetchFromConnector(connector, { limit: 30 });
-    const result = await ingestionOrchestrator.processSourceBatch(
-      connector.getSourceId(),
-      connector.getSourceName(),
-      rawItems,
-      30
-    );
-    if (result.inserted > 0) {
-      newsRepository.saveToDisk();
+    try {
+      const rawItems = await fetchFromConnector(connector, { limit: 30 });
+      const result = await ingestionOrchestrator.processSourceBatch(
+        connector.getSourceId(),
+        connector.getSourceName(),
+        rawItems || [],
+        30
+      );
+      if (result.inserted > 0) {
+        newsRepository.saveToDisk();
+      }
+      return result;
+    } catch (err: any) {
+      newsRepository.recordFetchRun({
+        sourceId,
+        sourceName: connector.getSourceName(),
+        status: 'failed',
+        startedAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+        durationMs: 0,
+        itemsReceived: 0,
+        itemsInserted: 0,
+        itemsDuplicate: 0,
+        error: err.message || 'Fetch failed'
+      });
+      throw err;
     }
-    return result;
   }
 
   getOperation(id: string): IngestionOperation | undefined {

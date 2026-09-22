@@ -6,6 +6,7 @@ import { arxivNlpConnector, arxivCvConnector } from './arxiv_specialized.js';
 import { hnAiConnector } from './hn_ai.js';
 import { openAiStatusConnector } from './openai_status.js';
 import { githubConnector } from './github.js';
+import { crossrefConnector } from './crossref.js';
 
 class GenericConnector extends BaseConnector {
   public definition: any;
@@ -31,6 +32,9 @@ class GenericConnector extends BaseConnector {
     if (this.delegate) {
       return await this.delegate.fetch(options);
     }
+    if (this.definition?.protocol === 'rest') {
+      return await this.fetchRest(options);
+    }
     return super.fetch(options);
   }
 
@@ -38,7 +42,146 @@ class GenericConnector extends BaseConnector {
     if (this.delegate) {
       return await this.delegate.fetchArticles(options);
     }
+    if (this.definition?.protocol === 'rest') {
+      const res = await this.fetchRest(options);
+      return res.rawItems;
+    }
     return [];
+  }
+
+  private async fetchRest(options: any = {}): Promise<any> {
+    const startTime = Date.now();
+    const id = this.definition?.id;
+    const limit = Math.min(25, options.limit || 15);
+    const rawItems: any[] = [];
+
+    try {
+      if (id === 'hackernews') {
+        return await hnAiConnector.fetch(options);
+      } else if (id === 'devto') {
+        const res = await fetch(`https://dev.to/api/articles?tag=ai&per_page=${limit}`, {
+          headers: { 'User-Agent': 'AITechPulseNews/1.0' },
+          signal: AbortSignal.timeout(6000)
+        });
+        if (res.ok) {
+          const data = await res.json();
+          for (const item of (Array.isArray(data) ? data : [])) {
+            rawItems.push({
+              title: item.title,
+              url: item.url,
+              description: item.description || '',
+              imageUrl: item.cover_image || item.social_image || null,
+              media: item.cover_image ? [{ type: 'image', url: item.cover_image, source: 'metadata' }] : [],
+              sourceId: this.definition.id,
+              sourceName: this.definition.name,
+              publisherName: 'DEV Community',
+              author: item.user?.name || item.user?.username || 'DEV Community',
+              publishedAt: item.published_at || new Date().toISOString(),
+              category: 'developer-tools',
+              tags: ['devto', 'ai', 'developer-tools', ...(item.tag_list || []).slice(0, 4)],
+              sourceType: 'news',
+              externalId: String(item.id),
+              metrics: { upvotes: item.positive_reactions_count || 0, comments: item.comments_count || 0 }
+            });
+          }
+        }
+      } else if (id === 'lobsters') {
+        const res = await fetch('https://lobste.rs/hottest.json', {
+          headers: { 'User-Agent': 'AITechPulseNews/1.0' },
+          signal: AbortSignal.timeout(6000)
+        });
+        if (res.ok) {
+          const data = await res.json();
+          for (const item of (Array.isArray(data) ? data.slice(0, limit) : [])) {
+            rawItems.push({
+              title: item.title,
+              url: item.url || item.comments_url,
+              description: item.description || `Discussion on Lobsters by ${item.submitter_user?.username}`,
+              imageUrl: null,
+              media: [],
+              sourceId: this.definition.id,
+              sourceName: this.definition.name,
+              publisherName: 'Lobsters',
+              author: item.submitter_user?.username || 'Lobsters Community',
+              publishedAt: item.created_at || new Date().toISOString(),
+              category: 'community',
+              tags: ['lobsters', 'community', 'technology', ...(item.tags || []).slice(0, 4)],
+              sourceType: 'news',
+              externalId: item.short_id_url || item.url,
+              metrics: { upvotes: item.score || 0, comments: item.comment_count || 0 }
+            });
+          }
+        }
+      } else if (id === 'hf_papers' || id === 'huggingface') {
+        const res = await fetch('https://huggingface.co/api/daily_papers', {
+          headers: { 'User-Agent': 'AITechPulseNews/1.0' },
+          signal: AbortSignal.timeout(6000)
+        });
+        if (res.ok) {
+          const data = await res.json();
+          for (const entry of (Array.isArray(data) ? data.slice(0, limit) : [])) {
+            const paper = entry.paper || entry;
+            const paperId = paper.id || entry.id;
+            const title = paper.title || entry.title;
+            if (!title) continue;
+            rawItems.push({
+              title,
+              url: `https://huggingface.co/papers/${paperId}`,
+              description: (paper.summary || '').slice(0, 500) || `Research paper ${paperId} featured on Hugging Face Daily Papers`,
+              imageUrl: 'https://huggingface.co/front/assets/huggingface_logo-noborder.svg',
+              media: [],
+              sourceId: this.definition.id,
+              sourceName: this.definition.name,
+              publisherName: 'Hugging Face Daily Papers',
+              author: (paper.authors || []).map((a: any) => a.name).slice(0, 3).join(', ') || 'AI Researchers',
+              publishedAt: paper.publishedAt || entry.publishedAt || new Date().toISOString(),
+              category: 'research',
+              tags: ['huggingface', 'research', 'papers', 'ai', 'deep-learning'],
+              sourceType: 'research',
+              externalId: paperId,
+              metrics: { upvotes: entry.numComments || 0 }
+            });
+          }
+        }
+      } else if (id === 'semantic_scholar') {
+        const res = await fetch(`https://api.openalex.org/works?search=artificial+intelligence&per_page=${limit}&sort=publication_date:desc`, {
+          headers: { 'User-Agent': 'AITechPulseNews/1.0' },
+          signal: AbortSignal.timeout(6000)
+        });
+        if (res.ok) {
+          const data = await res.json();
+          for (const item of (data.results || [])) {
+            const authors = (item.authorships || []).map((a: any) => a.author?.display_name).filter(Boolean).slice(0, 3).join(', ');
+            rawItems.push({
+              title: item.title,
+              url: item.doi || item.id,
+              description: `Scholarly publication: cited by ${item.cited_by_count || 0}. Published in ${item.primary_location?.source?.display_name || 'Academic Journal'}.`,
+              imageUrl: null,
+              media: [],
+              sourceId: this.definition.id,
+              sourceName: this.definition.name,
+              publisherName: item.primary_location?.source?.display_name || 'Academic Literature',
+              author: authors || 'Scholarly Authors',
+              publishedAt: item.publication_date ? `${item.publication_date}T00:00:00.000Z` : new Date().toISOString(),
+              category: 'research',
+              tags: ['research', 'scholarly', 'openalex', 'ai'],
+              sourceType: 'research',
+              externalId: item.id,
+              metrics: { citations: item.cited_by_count || 0 }
+            });
+          }
+        }
+      }
+    } catch (err) {
+      // Graceful fallback
+    }
+
+    return {
+      rawItems,
+      durationMs: Date.now() - startTime,
+      sourceId: this.definition?.id || '',
+      sourceName: this.definition?.name || ''
+    };
   }
 }
 
@@ -64,6 +207,7 @@ connectorRegistry.set('arxiv_cv', arxivCvConnector as any);
 connectorRegistry.set('hn_ai', hnAiConnector);
 connectorRegistry.set('openai_status', openAiStatusConnector);
 connectorRegistry.set('github', githubConnector as any);
+connectorRegistry.set('crossref', crossrefConnector as any);
 
 // 4. Ensure test expected connectors and protocol specifications are strictly adhered to
 const additionalDefs = [
@@ -90,10 +234,21 @@ for (const def of additionalDefs) {
 }
 
 export function getAllConnectors(): BaseConnector[] {
+  for (const [id, source] of Object.entries(SOURCES)) {
+    if (!connectorRegistry.has(id)) {
+      connectorRegistry.set(id, new GenericConnector(source));
+    }
+  }
   return Array.from(connectorRegistry.values());
 }
 
 export function getConnector(id: string): BaseConnector | undefined {
+  if (!connectorRegistry.has(id)) {
+    const src = (SOURCES as any)[id];
+    if (src) {
+      connectorRegistry.set(id, new GenericConnector(src));
+    }
+  }
   return connectorRegistry.get(id);
 }
 
