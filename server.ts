@@ -56,6 +56,14 @@ async function startServer() {
   // Global Error Handler for API
   app.use(errorHandler);
 
+  // Serve static assets with high-speed caching and immutable headers
+  const publicAssetsPath = path.join(process.cwd(), 'public', 'assets');
+  app.use('/assets', express.static(publicAssetsPath, {
+    maxAge: '30d',
+    immutable: true,
+    etag: true,
+  }));
+
   // Vite middleware for development vs static build in production
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({

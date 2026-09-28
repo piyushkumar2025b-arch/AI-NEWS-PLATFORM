@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-  Image as ImageIcon,
   Video,
   Play,
   Headphones,
@@ -83,20 +82,21 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
   const imageCandidates = useMemo<string[]>(() => {
     const candidates: string[] = [];
 
-    // 1. If YouTube video, prioritize maxresdefault (1080p/720p HD) then sddefault (480p)
+    // 1. If YouTube video, prioritize hqdefault (100% available, 0-latency) then maxresdefault
     if (ytVideoId) {
-      return getYouTubeThumbnailHierarchy(ytVideoId);
+      candidates.push(`https://i.ytimg.com/vi/${ytVideoId}/hqdefault.jpg`);
+      candidates.push(`https://i.ytimg.com/vi/${ytVideoId}/maxresdefault.jpg`);
     }
 
     // 2. Try genuine image asset or fallback URL with quality upgrades
     const rawImage = imageAsset?.url || fallbackImageUrl;
     if (rawImage && !isLowQualityMedia(rawImage)) {
       const upgraded = upgradeMediaQuality(rawImage);
-      if (upgraded) {
+      if (upgraded && !candidates.includes(upgraded)) {
         candidates.push(upgraded);
       }
-      // If upgraded is different from raw (e.g. WordPress -300x200 stripped), add raw as secondary fallback
-      if (rawImage && upgraded !== rawImage && !isLowQualityMedia(rawImage)) {
+      // If upgraded is different from raw, add raw as secondary fallback
+      if (rawImage && upgraded !== rawImage && !isLowQualityMedia(rawImage) && !candidates.includes(rawImage)) {
         candidates.push(rawImage);
       }
     }
@@ -105,7 +105,7 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
     if (media) {
       for (const m of media) {
         if (m.type === 'image' && m.url && !isLowQualityMedia(m.url)) {
-          const up = upgradeMediaQuality(m.url);
+          const up = upgradeMediaQuality(m.url) || m.url;
           if (up && !candidates.includes(up)) {
             candidates.push(up);
           }
@@ -125,7 +125,6 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
   }, [ytVideoId, imageAsset?.url, fallbackImageUrl, media, title, category, sourceId, domain]);
 
   const [candidateIndex, setCandidateIndex] = useState<number>(0);
-  const [useProxy, setUseProxy] = useState<boolean>(false);
   const [imageLoaded, setImageLoaded] = useState<boolean>(false);
   const [isPlayingVideo, setIsPlayingVideo] = useState<boolean>(false);
 
@@ -133,35 +132,23 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
   useEffect(() => {
     setCandidateIndex(0);
     const firstCandidate = imageCandidates[0] || null;
-    setUseProxy(firstCandidate ? requiresImmediateTunneling(firstCandidate) : false);
     setImageLoaded(firstCandidate ? loadedImagesCache.has(firstCandidate) : false);
     setIsPlayingVideo(false);
   }, [imageCandidates]);
 
   const currentRawUrl = imageCandidates[candidateIndex] || null;
 
+  // Immediate cache hit detection
+  useEffect(() => {
+    if (currentRawUrl && loadedImagesCache.has(currentRawUrl)) {
+      setImageLoaded(true);
+    }
+  }, [currentRawUrl]);
+
   const aspectClass =
     aspectRatio === 'video' ? 'aspect-video' : aspectRatio === 'square' ? 'aspect-square' : 'min-h-[170px]';
 
-  // Compute final image src (direct CDN or high-speed tunnel proxy)
-  const isDirectCdn = currentRawUrl
-    ? (currentRawUrl.includes('ytimg.com') || currentRawUrl.includes('youtube.com'))
-    : false;
-
-  const finalSrc = useMemo(() => {
-    if (!currentRawUrl) return null;
-    if (useProxy && !isDirectCdn && /^https?:\/\//i.test(currentRawUrl)) {
-      const p = new URLSearchParams({
-        url: currentRawUrl,
-        title: title || '',
-        category: category || 'technology',
-        ...(sourceId ? { sourceId } : {}),
-        ...(domain ? { domain } : {})
-      });
-      return `/api/v1/media/proxy?${p.toString()}`;
-    }
-    return currentRawUrl;
-  }, [currentRawUrl, useProxy, isDirectCdn, title, category, sourceId, domain]);
+  const finalSrc = currentRawUrl;
 
   const handleImageLoad = () => {
     setImageLoaded(true);
@@ -169,21 +156,14 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
   };
 
   const handleImageError = () => {
-    // 1. If currently accessing direct and direct failed, try proxy for this URL once
-    if (!useProxy && !isDirectCdn && currentRawUrl && /^https?:\/\//i.test(currentRawUrl)) {
-      setUseProxy(true);
-      return;
-    }
-
-    // 2. If proxy also failed (or direct CDN like YouTube), advance to next candidate in waterfall
+    // Instantly advance to next candidate in waterfall (zero proxy stalling)
     if (candidateIndex + 1 < imageCandidates.length) {
-      setUseProxy(false);
       setImageLoaded(false);
       setCandidateIndex(prev => prev + 1);
       return;
     }
 
-    // 3. All candidates exhausted: clean failure (no blurry placeholder rendered)
+    // All candidates exhausted
     setCandidateIndex(imageCandidates.length);
   };
 
@@ -344,33 +324,27 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
       );
     }
 
+    const videoThumbnail = finalSrc || getEditorialImage(title, category, sourceId, domain);
+
     // Video preview with high-res 16:9 thumbnail and Play overlay
     return (
       <div
         onClick={() => setIsPlayingVideo(true)}
-        className={`group relative w-full overflow-hidden rounded-xl bg-stone-950 ${aspectClass} ${className} cursor-pointer select-none border border-stone-800/60 shadow-xs`}
+        className={`group relative w-full overflow-hidden rounded-xl bg-stone-900 ${aspectClass} ${className} cursor-pointer select-none border border-stone-800/60 shadow-xs`}
       >
-        {finalSrc ? (
-          <>
-            <img
-              src={finalSrc}
-              alt={title}
-              referrerPolicy="no-referrer"
-              loading="lazy"
-              decoding="async"
-              className={`h-full w-full object-cover transition-all duration-300 group-hover:scale-[1.02] ${
-                imageLoaded ? 'opacity-100' : 'opacity-80 animate-pulse'
-              }`}
-              onLoad={handleImageLoad}
-              onError={handleImageError}
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent transition-colors group-hover:via-black/10" />
-          </>
-        ) : (
-          <div className="absolute inset-0 flex items-center justify-center bg-stone-900 text-stone-600">
-            <Video className="h-8 w-8 opacity-40" />
-          </div>
-        )}
+        <img
+          src={videoThumbnail}
+          alt={title}
+          referrerPolicy="no-referrer"
+          loading="lazy"
+          decoding="async"
+          className={`h-full w-full object-cover transition-all duration-300 group-hover:scale-[1.02] ${
+            imageLoaded ? 'opacity-100' : 'opacity-90'
+          }`}
+          onLoad={handleImageLoad}
+          onError={handleImageError}
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent transition-colors group-hover:via-black/10" />
 
         {/* Center Play Button */}
         <div className="absolute inset-0 flex items-center justify-center">
@@ -476,42 +450,16 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
   }
 
   // 4. Primary Image Rendering
-  // If no high-quality image exists or image failed quality filter
-  if (!finalSrc || candidateIndex >= imageCandidates.length) {
-    if (showEditorialFallback) {
-      const fallbackPhoto = getEditorialImage(title, category, sourceId, domain);
+  const displaySrc = (finalSrc && candidateIndex < imageCandidates.length)
+    ? finalSrc
+    : (showEditorialFallback ? getEditorialImage(title, category, sourceId, domain) : null);
 
-      return (
-        <div className={`group/media relative w-full overflow-hidden rounded-xs bg-stone-900 border-0 ${aspectClass} ${className}`}>
-          <img
-            src={fallbackPhoto}
-            alt={title || 'Editorial photography'}
-            referrerPolicy="no-referrer"
-            loading="lazy"
-            decoding="async"
-            width="640"
-            height="360"
-            className="relative z-10 h-full w-full object-cover transform-gpu transition-all duration-300 group-hover/media:scale-[1.015]"
-          />
-        </div>
-      );
-    }
-    return null;
-  }
+  if (!displaySrc) return null;
 
   return (
-    <div className={`group/media relative w-full overflow-hidden rounded-xs bg-stone-900 border-0 ${aspectClass} ${className}`}>
-      {/* Crisp background shimmer while image loads */}
-      <div
-        className={`absolute inset-0 z-0 flex items-center justify-center bg-gradient-to-br from-stone-950 via-stone-900 to-stone-950 text-stone-600 transition-opacity duration-300 ${
-          imageLoaded ? 'opacity-0 pointer-events-none' : 'opacity-100 animate-pulse'
-        }`}
-      >
-        <ImageIcon className="h-6 w-6 opacity-30" />
-      </div>
-
+    <div className={`group/media relative w-full overflow-hidden rounded-xs bg-stone-200/50 border-0 ${aspectClass} ${className}`}>
       <img
-        src={finalSrc}
+        src={displaySrc}
         alt={title || 'Article visual'}
         referrerPolicy="no-referrer"
         loading="lazy"
@@ -520,8 +468,8 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
         height="360"
         onLoad={handleImageLoad}
         onError={handleImageError}
-        className={`relative z-10 h-full w-full object-cover transform-gpu transition-all duration-300 group-hover/media:scale-[1.015] ${
-          imageLoaded ? 'opacity-100' : 'opacity-85'
+        className={`h-full w-full object-cover transform-gpu transition-opacity duration-200 group-hover/media:scale-[1.015] ${
+          imageLoaded ? 'opacity-100' : 'opacity-0'
         }`}
       />
     </div>

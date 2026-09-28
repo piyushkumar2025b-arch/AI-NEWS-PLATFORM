@@ -11,17 +11,45 @@ export function isLowQualityMedia(url: string | null | undefined): boolean {
 
   const lower = trimmed.toLowerCase();
 
-  // 1. Synthetic placeholders & flash artifacts
+  // 1. Synthetic placeholders, data URIs & flash artifacts
   if (
-    lower.startsWith('data:image/svg') ||
-    lower.includes('dummy_image') ||
-    lower.includes('placeholder.com') ||
+    lower.startsWith('data:') ||
+    lower.includes('dummy') ||
+    lower.includes('placeholder') ||
+    lower.includes('default_image') ||
+    lower.includes('no-image') ||
+    lower.includes('no_image') ||
+    lower.includes('fallback') ||
+    lower.includes('blank.gif') ||
+    lower.includes('spacer.gif') ||
     lower.endsWith('.swf')
   ) {
     return true;
   }
 
-  // 2. Emojis (WordPress core emojis, Discourse emojis, Pytorch emojis, Twemoji)
+  // 2. Generic vector logos & non-article SVGs
+  if (
+    /\.svg(?:[?#]|$)/i.test(lower) ||
+    lower.includes('huggingface_logo') ||
+    lower.includes('huggingface.co/front/assets') ||
+    lower.includes('sponsors.svg') ||
+    lower.includes('sponsor.svg') ||
+    lower.includes('github-mark') ||
+    lower.includes('favicon') ||
+    lower.includes('apple-touch-icon') ||
+    lower.includes('feed-icon') ||
+    lower.includes('statcounter.com') ||
+    lower.includes('feedburner.com') ||
+    lower.includes('1x1.') ||
+    lower.includes('pixel.wp.com') ||
+    lower.includes('arxiv-logo-fb.png') ||
+    lower.includes('logo_bigger.jpg') ||
+    /\/btn[_-]|\/button[_-]|subscribe[_-]button/i.test(lower)
+  ) {
+    return true;
+  }
+
+  // 3. Emojis (WordPress core emojis, Discourse emojis, Pytorch emojis, Twemoji)
   if (
     lower.includes('s.w.org/images/core/emoji') ||
     lower.includes('emoji.discourse-cdn.com') ||
@@ -34,8 +62,11 @@ export function isLowQualityMedia(url: string | null | undefined): boolean {
     return true;
   }
 
-  // 3. User Avatars and profile icons
+  // 4. User Avatars and profile icons
   if (
+    lower.includes('avatars.githubusercontent.com') ||
+    lower.includes('githubusercontent.com/u/') ||
+    lower.includes('githubusercontent.com/in/') ||
     lower.includes('user_avatar') ||
     lower.includes('gravatar.com/avatar') ||
     lower.includes('github.com/identicons') ||
@@ -45,31 +76,11 @@ export function isLowQualityMedia(url: string | null | undefined): boolean {
     return true;
   }
 
-  // 4. Tiny thumbnails, author headshots, and badges
-  if (
-    lower.includes('techmeme.com/img/pml.png') ||
-    /techmeme\.com\/\d+\/i\d+\.jpg/i.test(lower) ||
-    lower.includes('statcounter.com') ||
-    lower.includes('feedburner.com') ||
-    lower.includes('1x1.') ||
-    lower.includes('pixel.wp.com') ||
-    lower.includes('sponsors.svg') ||
-    lower.includes('sponsor.svg') ||
-    lower.includes('arxiv-logo-fb.png') ||
-    lower.includes('logo_bigger.jpg') ||
-    lower.includes('favicon') ||
-    lower.includes('apple-touch-icon') ||
-    lower.includes('feed-icon') ||
-    /\/btn[_-]|\/button[_-]|subscribe[_-]button/i.test(lower)
-  ) {
-    return true;
-  }
-
-  // 5. Explicitly tiny width parameters
-  const widthParamMatch = lower.match(/[?&](?:w|width|size)=(\d+)/i);
-  if (widthParamMatch) {
-    const widthVal = parseInt(widthParamMatch[1], 10);
-    if (widthVal > 0 && widthVal < 100) {
+  // 5. Explicitly tiny width/size query parameters (e.g. s=60, w=48)
+  const sizeParamMatch = lower.match(/[?&](?:w|width|size|s)=(\d+)/i);
+  if (sizeParamMatch) {
+    const sizeVal = parseInt(sizeParamMatch[1], 10);
+    if (sizeVal > 0 && sizeVal < 120) {
       return true;
     }
   }

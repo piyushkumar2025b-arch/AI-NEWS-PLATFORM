@@ -2,7 +2,7 @@ import { CATEGORIES } from '../config/categories.js';
 import { mediaResolver } from '../services/media_resolver.js';
 import { getEditorialImage } from '../services/editorial_images.js';
 import { Article } from '../models/article.js';
-import { sanitizeArticleMedia } from '../utils/media_quality.js';
+import { sanitizeArticleMedia, isLowQualityMedia } from '../utils/media_quality.js';
 
 export class EnrichmentPipeline {
   enrich(article: Article): Article {
@@ -82,18 +82,15 @@ export class EnrichmentPipeline {
 
     // Ensure every article is guaranteed to have authentic, high-resolution photography
     for (const art of enriched) {
-      if (!art.image_url || !art.media || art.media.length === 0) {
+      if (!art.image_url || isLowQualityMedia(art.image_url) || !art.media || art.media.length === 0 || art.media.every(m => isLowQualityMedia(m.url))) {
         const photo = getEditorialImage(art.title, art.category, art.source_id, art.domain);
         art.image_url = photo;
-        if (!art.media) art.media = [];
-        if (!art.media.some(m => m.url === photo)) {
-          art.media.unshift({
-            type: 'image',
-            url: photo,
-            title: art.title,
-            source: 'editorial'
-          });
-        }
+        art.media = [{
+          type: 'image',
+          url: photo,
+          title: art.title,
+          source: 'editorial'
+        }];
       }
     }
 
