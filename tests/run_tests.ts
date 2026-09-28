@@ -480,7 +480,7 @@ async function runAllTests() {
         source_id: 'youtube_mattwolfe',
         publisher: { name: 'Matt Wolfe', domain: 'youtube.com' },
         author: 'Matt Wolfe',
-        published_at: '2026-09-11T12:00:00Z',
+        published_at: new Date().toISOString(),
         category: 'developer-tools',
         tags: ['video'],
         language: 'en',

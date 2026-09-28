@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { newsRepository } from '../database/repository.js';
 import { CATEGORIES } from '../config/categories.js';
+import { cacheService } from '../cache/cache_service.js';
 
 export class NewsHandler {
   async getNews(req: Request, res: Response, next: NextFunction) {
@@ -20,6 +21,17 @@ export class NewsHandler {
       const toDate = q.toDate || q.to_date || q.to;
       const sort = (q.sort || 'latest') as any;
 
+      const cacheKey = `news:query:${JSON.stringify(q)}`;
+      const cached = await cacheService.get(cacheKey);
+      if (cached) {
+        res.setHeader('X-Cache', 'HIT');
+        res.setHeader('Cache-Control', 'public, max-age=15, stale-while-revalidate=30');
+        return res.json({
+          ...cached,
+          request_id: (req as any).requestId
+        });
+      }
+
       const result = newsRepository.queryArticles({
         page: parseInt(page, 10) || 1,
         limit: parseInt(limit, 10) || 30,
@@ -36,7 +48,7 @@ export class NewsHandler {
         sort
       });
 
-      res.json({
+      const payload = {
         success: true,
         data: result.articles,
         pagination: {
@@ -44,7 +56,14 @@ export class NewsHandler {
           limit: parseInt(limit, 10) || 30,
           total: result.total,
           totalPages: Math.ceil(result.total / (parseInt(limit, 10) || 30))
-        },
+        }
+      };
+
+      await cacheService.set(cacheKey, payload, 25);
+      res.setHeader('X-Cache', 'MISS');
+      res.setHeader('Cache-Control', 'public, max-age=15, stale-while-revalidate=30');
+      res.json({
+        ...payload,
         request_id: (req as any).requestId
       });
     } catch (err) {
@@ -55,10 +74,28 @@ export class NewsHandler {
   async getLatest(req: Request, res: Response, next: NextFunction) {
     try {
       const limit = parseInt(req.query.limit as string, 10) || 15;
+      const cacheKey = `news:latest:${limit}`;
+      const cached = await cacheService.get(cacheKey);
+      if (cached) {
+        res.setHeader('X-Cache', 'HIT');
+        res.setHeader('Cache-Control', 'public, max-age=15, stale-while-revalidate=30');
+        return res.json({
+          ...cached,
+          request_id: (req as any).requestId
+        });
+      }
+
       const result = newsRepository.queryArticles({ limit, sort: 'latest' });
-      res.json({
+      const payload = {
         success: true,
-        data: result.articles,
+        data: result.articles
+      };
+
+      await cacheService.set(cacheKey, payload, 25);
+      res.setHeader('X-Cache', 'MISS');
+      res.setHeader('Cache-Control', 'public, max-age=15, stale-while-revalidate=30');
+      res.json({
+        ...payload,
         request_id: (req as any).requestId
       });
     } catch (err) {
@@ -71,8 +108,20 @@ export class NewsHandler {
       const category = req.params.category;
       const limit = parseInt(req.query.limit as string, 10) || 30;
       const page = parseInt(req.query.page as string, 10) || 1;
+
+      const cacheKey = `news:category:${category}:${page}:${limit}`;
+      const cached = await cacheService.get(cacheKey);
+      if (cached) {
+        res.setHeader('X-Cache', 'HIT');
+        res.setHeader('Cache-Control', 'public, max-age=20, stale-while-revalidate=40');
+        return res.json({
+          ...cached,
+          request_id: (req as any).requestId
+        });
+      }
+
       const result = newsRepository.queryArticles({ category, limit, page });
-      res.json({
+      const payload = {
         success: true,
         data: result.articles,
         pagination: {
@@ -80,7 +129,14 @@ export class NewsHandler {
           limit,
           total: result.total,
           totalPages: Math.ceil(result.total / limit)
-        },
+        }
+      };
+
+      await cacheService.set(cacheKey, payload, 30);
+      res.setHeader('X-Cache', 'MISS');
+      res.setHeader('Cache-Control', 'public, max-age=20, stale-while-revalidate=40');
+      res.json({
+        ...payload,
         request_id: (req as any).requestId
       });
     } catch (err) {
@@ -93,8 +149,20 @@ export class NewsHandler {
       const sourceId = req.params.source_id;
       const limit = parseInt(req.query.limit as string, 10) || 30;
       const page = parseInt(req.query.page as string, 10) || 1;
+
+      const cacheKey = `news:source:${sourceId}:${page}:${limit}`;
+      const cached = await cacheService.get(cacheKey);
+      if (cached) {
+        res.setHeader('X-Cache', 'HIT');
+        res.setHeader('Cache-Control', 'public, max-age=20, stale-while-revalidate=40');
+        return res.json({
+          ...cached,
+          request_id: (req as any).requestId
+        });
+      }
+
       const result = newsRepository.queryArticles({ sourceId, limit, page });
-      res.json({
+      const payload = {
         success: true,
         data: result.articles,
         pagination: {
@@ -102,7 +170,14 @@ export class NewsHandler {
           limit,
           total: result.total,
           totalPages: Math.ceil(result.total / limit)
-        },
+        }
+      };
+
+      await cacheService.set(cacheKey, payload, 30);
+      res.setHeader('X-Cache', 'MISS');
+      res.setHeader('Cache-Control', 'public, max-age=20, stale-while-revalidate=40');
+      res.json({
+        ...payload,
         request_id: (req as any).requestId
       });
     } catch (err) {
@@ -113,6 +188,17 @@ export class NewsHandler {
   async getArticleById(req: Request, res: Response, next: NextFunction) {
     try {
       const id = req.params.id;
+      const cacheKey = `news:article:${id}`;
+      const cached = await cacheService.get(cacheKey);
+      if (cached) {
+        res.setHeader('X-Cache', 'HIT');
+        res.setHeader('Cache-Control', 'public, max-age=30, stale-while-revalidate=60');
+        return res.json({
+          ...cached,
+          request_id: (req as any).requestId
+        });
+      }
+
       const article = newsRepository.getArticleById(id);
       if (!article) {
         return res.status(404).json({
@@ -121,9 +207,17 @@ export class NewsHandler {
           request_id: (req as any).requestId
         });
       }
-      res.json({
+
+      const payload = {
         success: true,
-        data: article,
+        data: article
+      };
+
+      await cacheService.set(cacheKey, payload, 60);
+      res.setHeader('X-Cache', 'MISS');
+      res.setHeader('Cache-Control', 'public, max-age=30, stale-while-revalidate=60');
+      res.json({
+        ...payload,
         request_id: (req as any).requestId
       });
     } catch (err) {
@@ -134,6 +228,17 @@ export class NewsHandler {
   async getFullArticle(req: Request, res: Response, next: NextFunction) {
     try {
       const id = req.params.id;
+      const cacheKey = `news:article:full:${id}`;
+      const cached = await cacheService.get(cacheKey);
+      if (cached) {
+        res.setHeader('X-Cache', 'HIT');
+        res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=120');
+        return res.json({
+          ...cached,
+          request_id: (req as any).requestId
+        });
+      }
+
       const article = newsRepository.getArticleById(id);
       if (!article) {
         return res.status(404).json({
@@ -168,9 +273,16 @@ export class NewsHandler {
         };
       }
 
-      res.json({
+      const payload = {
         success: true,
-        data: article,
+        data: article
+      };
+
+      await cacheService.set(cacheKey, payload, 60);
+      res.setHeader('X-Cache', 'MISS');
+      res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=120');
+      res.json({
+        ...payload,
         request_id: (req as any).requestId
       });
     } catch (err) {
@@ -179,6 +291,17 @@ export class NewsHandler {
   }
 
   async getCategories(req: Request, res: Response, _next: NextFunction) {
+    const cacheKey = 'news:categories:all';
+    const cached = await cacheService.get(cacheKey);
+    if (cached) {
+      res.setHeader('X-Cache', 'HIT');
+      res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=120');
+      return res.json({
+        ...cached,
+        request_id: (req as any).requestId
+      });
+    }
+
     const stats = newsRepository.getStats();
     const categoriesWithCount = Object.entries(CATEGORIES).map(([id, cat]) => ({
       id,
@@ -187,9 +310,16 @@ export class NewsHandler {
       count: stats.categoryCounts[id] || 0
     }));
 
-    res.json({
+    const payload = {
       success: true,
-      data: categoriesWithCount,
+      data: categoriesWithCount
+    };
+
+    await cacheService.set(cacheKey, payload, 60);
+    res.setHeader('X-Cache', 'MISS');
+    res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=120');
+    res.json({
+      ...payload,
       request_id: (req as any).requestId
     });
   }

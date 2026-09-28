@@ -20,6 +20,9 @@ export class NewsRepository {
   private titleInvertedIndex: Map<string, Set<string>> = new Map();
   private sortedChronologicalArticles: Article[] = [];
   private isChronologicalDirty: boolean = true;
+  private memoizedDiversifiedArticles: Article[] = [];
+  private isDiversifiedDirty: boolean = true;
+  private hasSeedArticles: boolean = false;
   private categoryIndex: Map<string, Article[]> = new Map();
   private sourceIdIndex: Map<string, Article[]> = new Map();
   private isIndexesDirty: boolean = true;
@@ -292,8 +295,57 @@ export class NewsRepository {
     list.sort((a, b) => ((b as any)._ts || 0) - ((a as any)._ts || 0));
     this.sortedChronologicalArticles = list;
     this.isChronologicalDirty = false;
+    this.isDiversifiedDirty = true;
     this.isIndexesDirty = true;
     return this.sortedChronologicalArticles;
+  }
+
+  private getDiversifiedArticles(): Article[] {
+    if (!this.isDiversifiedDirty && this.memoizedDiversifiedArticles.length === this.articles.size) {
+      return this.memoizedDiversifiedArticles;
+    }
+    const chrono = this.getChronologicalArticles();
+    if (chrono.length <= 2) {
+      this.memoizedDiversifiedArticles = chrono;
+      this.isDiversifiedDirty = false;
+      return this.memoizedDiversifiedArticles;
+    }
+
+    const bySource = new Map<string, Article[]>();
+    for (let i = 0; i < chrono.length; i++) {
+      const art = chrono[i];
+      let arr = bySource.get(art.source_id);
+      if (!arr) {
+        arr = [];
+        bySource.set(art.source_id, arr);
+      }
+      arr.push(art);
+    }
+    const sourceQueues = Array.from(bySource.values());
+    const ptrs = new Array(sourceQueues.length).fill(0);
+    const diversified: Article[] = [];
+    let active = true;
+    while (active) {
+      active = false;
+      for (let q = 0; q < sourceQueues.length; q++) {
+        const queue = sourceQueues[q];
+        if (ptrs[q] < queue.length) {
+          diversified.push(queue[ptrs[q]++]);
+          active = true;
+        }
+      }
+    }
+    this.memoizedDiversifiedArticles = diversified;
+    this.isDiversifiedDirty = false;
+    return this.memoizedDiversifiedArticles;
+  }
+
+  private getArticleSearchText(art: Article): string {
+    const cached = (art as any)._searchText;
+    if (typeof cached === 'string') return cached;
+    const text = `${art.title} ${art.description || ''} ${art.source || ''} ${art.author || ''} ${(art.tags || []).join(' ')}`.toLowerCase();
+    (art as any)._searchText = text;
+    return text;
   }
 
   private ensureIndexes() {
@@ -341,7 +393,11 @@ export class NewsRepository {
     this.getTimestamp(article);
     this.articles.set(article.id, article);
     this.isChronologicalDirty = true;
+    this.isDiversifiedDirty = true;
     this.isIndexesDirty = true;
+    if (article.is_seed || (article as any).record_origin === 'seed') {
+      this.hasSeedArticles = true;
+    }
 
     if (article.canonical_url) {
       this.canonicalUrlIndex.set(article.canonical_url, article.id);
@@ -558,16 +614,16 @@ export class NewsRepository {
       !hasChannel &&
       !hasFromDate &&
       !hasToDate &&
-      !excludeSeed
+      (!excludeSeed || !this.hasSeedArticles)
     ) {
-      const chrono = this.getChronologicalArticles();
+      const feed = this.getDiversifiedArticles();
       const page = Math.max(1, options.page || 1);
       const maxAllowedLimit = options.maxLimit || 500;
       const limit = Math.min(maxAllowedLimit, Math.max(1, options.limit || 30));
       const offset = (page - 1) * limit;
       return {
-        articles: chrono.slice(offset, offset + limit),
-        total: chrono.length
+        articles: feed.slice(offset, offset + limit),
+        total: feed.length
       };
     }
 
@@ -642,7 +698,7 @@ export class NewsRepository {
       if (toTime > 0 && (t <= 0 || t > toTime)) continue;
 
       if (qTerms && qTerms.length > 0) {
-        const full = `${a.title} ${a.description} ${a.source} ${a.author || ''} ${a.tags.join(' ')}`.toLowerCase();
+        const full = this.getArticleSearchText(a);
         if (!qTerms.every(term => full.includes(term))) continue;
       }
 
@@ -689,7 +745,7 @@ export class NewsRepository {
         if (scoreB !== scoreA) return scoreB - scoreA;
         return this.getTimestamp(b) - this.getTimestamp(a);
       });
-    } else if (!isDefaultSort || resultList !== filtered) {
+    } else if (!isDefaultSort) {
       resultList.sort((a, b) => this.getTimestamp(b) - this.getTimestamp(a));
     }
 

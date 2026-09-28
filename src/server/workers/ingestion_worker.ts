@@ -3,6 +3,7 @@ import { SOURCES } from '../config/sources.js';
 import { newsRepository } from '../database/repository.js';
 import { getAllConnectors, getConnector } from '../connectors/index.js';
 import { ingestionOrchestrator, BatchProcessingResult } from '../pipelines/ingestion.js';
+import { cacheService } from '../cache/cache_service.js';
 
 const logger = new Logger('IngestionWorker');
 
@@ -109,6 +110,10 @@ export class IngestionWorker {
     };
 
     this.currentOperation = op;
+    if (this.operations.size >= 50) {
+      const oldestKey = this.operations.keys().next().value;
+      if (oldestKey) this.operations.delete(oldestKey);
+    }
     this.operations.set(operationId, op);
     this.isRunning = true;
 
@@ -181,6 +186,8 @@ export class IngestionWorker {
         op.completedAt = new Date().toISOString();
         if (op.itemsInserted > 0) {
           newsRepository.saveToDisk();
+          cacheService.invalidatePrefix('news:').catch(() => {});
+          cacheService.invalidatePrefix('search:').catch(() => {});
         }
         if (op.failedSources > 0) {
           logger.warn(
@@ -224,6 +231,8 @@ export class IngestionWorker {
       );
       if (result.inserted > 0) {
         newsRepository.saveToDisk();
+        cacheService.invalidatePrefix('news:').catch(() => {});
+        cacheService.invalidatePrefix('search:').catch(() => {});
       }
       return result;
     } catch (err: any) {
