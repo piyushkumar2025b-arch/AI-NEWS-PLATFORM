@@ -13,11 +13,10 @@ export function isLowQualityMedia(url: string | null | undefined): boolean {
 
   // 1. Synthetic placeholders & flash artifacts
   if (
-    lower.includes('unsplash.com') ||
     lower.startsWith('data:image/svg') ||
-    lower.includes('placeholder') ||
-    lower.includes('.swf') ||
-    lower.includes('/v/')
+    lower.includes('dummy_image') ||
+    lower.includes('placeholder.com') ||
+    lower.endsWith('.swf')
   ) {
     return true;
   }

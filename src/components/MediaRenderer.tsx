@@ -15,6 +15,10 @@ import {
   extractYouTubeId,
   getYouTubeThumbnailHierarchy
 } from '../utils/mediaQuality.js';
+import {
+  getEditorialImageCandidates,
+  getEditorialImage
+} from '../utils/editorialMedia.js';
 
 interface MediaRendererProps {
   media?: MediaAsset[];
@@ -109,8 +113,16 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
       }
     }
 
+    // 4. Topic-matched genuine tech photography candidates (guarantees real photos)
+    const editorialPhotos = getEditorialImageCandidates(title, category, sourceId, domain);
+    for (const ep of editorialPhotos) {
+      if (ep && !candidates.includes(ep)) {
+        candidates.push(ep);
+      }
+    }
+
     return candidates;
-  }, [ytVideoId, imageAsset?.url, fallbackImageUrl, media]);
+  }, [ytVideoId, imageAsset?.url, fallbackImageUrl, media, title, category, sourceId, domain]);
 
   const [candidateIndex, setCandidateIndex] = useState<number>(0);
   const [useProxy, setUseProxy] = useState<boolean>(false);
@@ -467,20 +479,13 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
   // If no high-quality image exists or image failed quality filter
   if (!finalSrc || candidateIndex >= imageCandidates.length) {
     if (showEditorialFallback) {
-      const p = new URLSearchParams({
-        title: title || 'Tech & AI Dispatch',
-        category: category || 'technology',
-        ...(source ? { source } : {}),
-        ...(sourceId ? { sourceId } : {}),
-        ...(domain ? { domain } : {})
-      });
-      const editorialCardUrl = `/api/v1/media/card?${p.toString()}`;
+      const fallbackPhoto = getEditorialImage(title, category, sourceId, domain);
 
       return (
-        <div className={`group/media relative w-full overflow-hidden rounded-xl bg-stone-950 border border-stone-800/80 shadow-xs ${aspectClass} ${className}`}>
+        <div className={`group/media relative w-full overflow-hidden rounded-xs bg-stone-900 border-0 ${aspectClass} ${className}`}>
           <img
-            src={editorialCardUrl}
-            alt={title || 'Editorial visual'}
+            src={fallbackPhoto}
+            alt={title || 'Editorial photography'}
             referrerPolicy="no-referrer"
             loading="lazy"
             decoding="async"
@@ -488,12 +493,6 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
             height="360"
             className="relative z-10 h-full w-full object-cover transform-gpu transition-all duration-300 group-hover/media:scale-[1.015]"
           />
-          {/* Source / Media Type Badge */}
-          <span
-            className={`absolute top-2.5 left-2.5 z-20 inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-semibold tracking-wider uppercase backdrop-blur-xs shadow-xs ${badgeColor}`}
-          >
-            {badgeLabel}
-          </span>
         </div>
       );
     }
@@ -501,7 +500,7 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
   }
 
   return (
-    <div className={`group/media relative w-full overflow-hidden rounded-xl bg-stone-950 border border-stone-800/80 shadow-xs ${aspectClass} ${className}`}>
+    <div className={`group/media relative w-full overflow-hidden rounded-xs bg-stone-900 border-0 ${aspectClass} ${className}`}>
       {/* Crisp background shimmer while image loads */}
       <div
         className={`absolute inset-0 z-0 flex items-center justify-center bg-gradient-to-br from-stone-950 via-stone-900 to-stone-950 text-stone-600 transition-opacity duration-300 ${
@@ -525,20 +524,6 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
           imageLoaded ? 'opacity-100' : 'opacity-85'
         }`}
       />
-
-      {/* Source / Media Type Badge */}
-      <span
-        className={`absolute top-2.5 left-2.5 z-20 inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-semibold tracking-wider uppercase backdrop-blur-xs shadow-xs ${badgeColor}`}
-      >
-        {badgeLabel}
-      </span>
-
-      {/* Multi-asset indicator */}
-      {media && media.length > 1 && (
-        <span className="absolute bottom-2.5 right-2.5 z-20 rounded-md bg-stone-950/80 px-1.5 py-0.5 text-[10px] font-medium text-white backdrop-blur-xs shadow-xs border border-white/10">
-          +{media.length} media
-        </span>
-      )}
     </div>
   );
 };

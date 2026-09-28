@@ -75,9 +75,26 @@ export class EnrichmentPipeline {
       }
     }
 
-    // Ensure media array is clean of stock placeholders and low quality icons; upgrade to high-res
+    // Ensure media array is clean of low quality icons; upgrade to high-res
     for (const art of enriched) {
       sanitizeArticleMedia(art);
+    }
+
+    // Ensure every article is guaranteed to have authentic, high-resolution photography
+    for (const art of enriched) {
+      if (!art.image_url || !art.media || art.media.length === 0) {
+        const photo = getEditorialImage(art.title, art.category, art.source_id, art.domain);
+        art.image_url = photo;
+        if (!art.media) art.media = [];
+        if (!art.media.some(m => m.url === photo)) {
+          art.media.unshift({
+            type: 'image',
+            url: photo,
+            title: art.title,
+            source: 'editorial'
+          });
+        }
+      }
     }
 
     return enriched;

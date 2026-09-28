@@ -2,8 +2,11 @@ import http from 'http';
 import https from 'https';
 import dns from 'dns';
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 import { mediaResolver } from '../services/media_resolver.js';
 import { generateCardSvg } from '../services/card_generator.js';
+import { getEditorialImage } from '../services/editorial_images.js';
 import { isLowQualityMedia, upgradeMediaQuality } from '../utils/media_quality.js';
 import { Logger } from '../config/logging.js';
 
@@ -42,7 +45,7 @@ export class MediaHandler {
   }
 
   /**
-   * Generates a zero-latency dynamic vector OpenGraph card for any article.
+   * Generates or delivers a real, high-resolution photography image for any article.
    */
   public renderCard(req: any, res: any) {
     const title = (req.query.title as string) || 'AI Technology Dispatch';
@@ -50,24 +53,26 @@ export class MediaHandler {
     const sourceId = (req.query.sourceId as string) || '';
     const domain = (req.query.domain as string) || '';
 
-    const svg = generateCardSvg(title, category, sourceId, domain);
-    const buffer = Buffer.from(svg, 'utf-8');
-    const etag = `"${crypto.createHash('md5').update(buffer).digest('hex')}"`;
-
-    if (req.headers['if-none-match'] === etag) {
-      return res.status(304).end();
+    const photoUrl = getEditorialImage(title, category, sourceId, domain);
+    if (photoUrl.startsWith('/')) {
+      const publicPath = path.join(process.cwd(), 'public', photoUrl);
+      if (fs.existsSync(publicPath)) {
+        const buffer = fs.readFileSync(publicPath);
+        const etag = `"${crypto.createHash('md5').update(buffer).digest('hex')}"`;
+        if (req.headers['if-none-match'] === etag) {
+          return res.status(304).end();
+        }
+        res.setHeader('Content-Type', 'image/jpeg');
+        res.setHeader('Content-Length', buffer.length);
+        res.setHeader('ETag', etag);
+        res.setHeader('Cache-Control', 'public, max-age=604800, stale-while-revalidate=86400, immutable');
+        res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        return res.end(buffer);
+      }
     }
 
-    res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8');
-    res.setHeader('Content-Length', buffer.length);
-    res.setHeader('ETag', etag);
-    res.setHeader('Cache-Control', 'public, max-age=604800, stale-while-revalidate=86400, immutable');
-    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'");
-
-    return res.end(buffer);
+    return res.redirect(302, photoUrl);
   }
 
   /**
@@ -212,15 +217,20 @@ export class MediaHandler {
 
   private sendFallbackCard(res: any, title: string, category: string, sourceId: string, domain: string) {
     if (res.headersSent) return;
-    const svg = generateCardSvg(title || 'AI Dispatch', category || 'technology', sourceId, domain);
-    const buffer = Buffer.from(svg, 'utf-8');
-    res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8');
-    res.setHeader('Content-Length', buffer.length);
-    res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=3600');
-    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'");
-    return res.status(200).end(buffer);
+    const photoUrl = getEditorialImage(title, category, sourceId, domain);
+    if (photoUrl.startsWith('/')) {
+      const publicPath = path.join(process.cwd(), 'public', photoUrl);
+      if (fs.existsSync(publicPath)) {
+        const buffer = fs.readFileSync(publicPath);
+        res.setHeader('Content-Type', 'image/jpeg');
+        res.setHeader('Content-Length', buffer.length);
+        res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=3600');
+        res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        return res.status(200).end(buffer);
+      }
+    }
+    return res.redirect(302, photoUrl);
   }
 
   /**
