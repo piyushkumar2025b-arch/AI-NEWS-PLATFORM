@@ -146,7 +146,7 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
   }, [currentRawUrl]);
 
   const aspectClass =
-    aspectRatio === 'video' ? 'aspect-video' : aspectRatio === 'square' ? 'aspect-square' : 'min-h-[170px]';
+    aspectRatio === 'video' ? 'aspect-video' : aspectRatio === 'square' ? 'aspect-square' : 'h-full w-full';
 
   const finalSrc = currentRawUrl;
 

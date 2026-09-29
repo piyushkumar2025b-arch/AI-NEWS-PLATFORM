@@ -586,7 +586,21 @@ export class NewsRepository {
     limit?: number;
     maxLimit?: number;
     includeSeed?: boolean;
+    ids?: string[];
   } = {}): { articles: Article[]; total: number } {
+    if (options.ids && options.ids.length > 0) {
+      const idSet = new Set(options.ids.map(id => (id || '').trim()).filter(Boolean));
+      const matched: Article[] = [];
+      for (const id of idSet) {
+        const art = this.getArticleById(id);
+        if (art) matched.push(art);
+      }
+      return {
+        articles: matched,
+        total: matched.length
+      };
+    }
+
     const isDefaultSort = !options.sort || options.sort === 'latest';
     const hasCategory = Boolean(options.category);
     const hasSource = Boolean(options.sourceId);

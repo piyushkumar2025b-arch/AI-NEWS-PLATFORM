@@ -22,6 +22,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<SectionTab>('for_you');
   const [viewMode, setViewMode] = useState<'magazine' | 'compact'>('magazine');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [selectedSource, setSelectedSource] = useState<string | null>(null);
 
   // Data states
   const [articles, setArticles] = useState<Article[]>([]);
@@ -90,12 +91,22 @@ export default function App() {
       setError(null);
 
       let url = '/api/v1/news?limit=120';
-      if (activeTab === 'frontier') {
+      if (selectedSource) {
+        url = `/api/v1/news?source_id=${encodeURIComponent(selectedSource)}&limit=120`;
+      } else if (activeTab === 'frontier') {
         url += '&category=ai';
       } else if (activeTab === 'research') {
         url += '&source_type=research';
       } else if (activeTab === 'media') {
         url = '/api/v1/videos?limit=60';
+      } else if (activeTab === 'saved') {
+        if (savedIds.size > 0) {
+          url = `/api/v1/news?ids=${Array.from(savedIds).join(',')}&limit=120`;
+        } else {
+          setArticles([]);
+          setLoading(false);
+          return;
+        }
       }
 
       const res = await fetch(url);
@@ -112,11 +123,37 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  }, [activeTab]);
+  }, [activeTab, selectedSource, savedIds]);
 
   useEffect(() => {
-    fetchArticles();
-  }, [fetchArticles]);
+    if (!searchQuery.trim()) {
+      fetchArticles();
+    }
+  }, [fetchArticles, searchQuery]);
+
+  // Live full-corpus search across all dispatches
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (!q) return;
+
+    const timer = setTimeout(async () => {
+      try {
+        setLoading(true);
+        const res = await fetch(`/api/v1/search?q=${encodeURIComponent(q)}&limit=60`);
+        if (res.ok) {
+          const json = await res.json();
+          const list: Article[] = Array.isArray(json.data) ? json.data : [];
+          setArticles(list);
+        }
+      } catch (err) {
+        console.error('Search error:', err);
+      } finally {
+        setLoading(false);
+      }
+    }, 280);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   // Reset pagination when tab or search changes
   useEffect(() => {
@@ -237,7 +274,7 @@ export default function App() {
         <nav className="flex items-center justify-between gap-6 pt-4 text-sm font-medium border-t border-stone-200/50 overflow-x-auto no-scrollbar">
           <div className="flex items-center gap-6 sm:gap-8">
             <button
-              onClick={() => setActiveTab('for_you')}
+              onClick={() => { setActiveTab('for_you'); setSelectedSource(null); }}
               className={`pb-1 cursor-pointer transition-colors relative whitespace-nowrap ${
                 activeTab === 'for_you'
                   ? 'text-stone-900 font-semibold after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-stone-900'
@@ -248,7 +285,7 @@ export default function App() {
             </button>
 
             <button
-              onClick={() => setActiveTab('frontier')}
+              onClick={() => { setActiveTab('frontier'); setSelectedSource(null); }}
               className={`pb-1 cursor-pointer transition-colors relative whitespace-nowrap ${
                 activeTab === 'frontier'
                   ? 'text-stone-900 font-semibold after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-stone-900'
@@ -259,7 +296,7 @@ export default function App() {
             </button>
 
             <button
-              onClick={() => setActiveTab('research')}
+              onClick={() => { setActiveTab('research'); setSelectedSource(null); }}
               className={`pb-1 cursor-pointer transition-colors relative whitespace-nowrap ${
                 activeTab === 'research'
                   ? 'text-stone-900 font-semibold after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-stone-900'
@@ -270,7 +307,7 @@ export default function App() {
             </button>
 
             <button
-              onClick={() => setActiveTab('media')}
+              onClick={() => { setActiveTab('media'); setSelectedSource(null); }}
               className={`pb-1 cursor-pointer transition-colors relative whitespace-nowrap ${
                 activeTab === 'media'
                   ? 'text-stone-900 font-semibold after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-stone-900'
@@ -281,7 +318,7 @@ export default function App() {
             </button>
 
             <button
-              onClick={() => setActiveTab('saved')}
+              onClick={() => { setActiveTab('saved'); setSelectedSource(null); }}
               className={`pb-1 cursor-pointer transition-colors relative whitespace-nowrap flex items-center gap-1.5 ${
                 activeTab === 'saved'
                   ? 'text-stone-900 font-semibold after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-stone-900'
@@ -316,6 +353,19 @@ export default function App() {
             </button>
           </div>
         </nav>
+
+        {/* Selected Source Indicator */}
+        {selectedSource && (
+          <div className="flex items-center justify-between pt-3 text-xs text-stone-600 border-t border-stone-200/40 mt-3">
+            <span>Filtered by publication: <strong className="font-semibold text-stone-900">{selectedSource}</strong></span>
+            <button
+              onClick={() => setSelectedSource(null)}
+              className="text-stone-400 hover:text-stone-900 underline cursor-pointer text-[11px]"
+            >
+              Clear filter (Show all)
+            </button>
+          </div>
+        )}
       </header>
 
       {/* 2. Main Content Canvas (Preference to the VIEW) */}
@@ -377,6 +427,7 @@ export default function App() {
                   <ArticleCard
                     article={heroArticle}
                     onInspect={handleOpenArticle}
+                    onSelectSource={setSelectedSource}
                     isHero={true}
                     isBookmarked={savedIds.has(heroArticle.id)}
                     onToggleBookmark={toggleBookmark}
@@ -392,6 +443,7 @@ export default function App() {
                         key={article.id}
                         article={article}
                         onInspect={handleOpenArticle}
+                        onSelectSource={setSelectedSource}
                         isHero={false}
                         isBookmarked={savedIds.has(article.id)}
                         onToggleBookmark={toggleBookmark}
@@ -409,6 +461,7 @@ export default function App() {
                         key={article.id}
                         article={article}
                         onInspect={handleOpenArticle}
+                        onSelectSource={setSelectedSource}
                         isHero={false}
                         isBookmarked={savedIds.has(article.id)}
                         onToggleBookmark={toggleBookmark}
@@ -428,6 +481,7 @@ export default function App() {
                     key={article.id}
                     article={article}
                     onInspect={handleOpenArticle}
+                    onSelectSource={setSelectedSource}
                     isBookmarked={savedIds.has(article.id)}
                     onToggleBookmark={toggleBookmark}
                     isRead={readIds.has(article.id)}

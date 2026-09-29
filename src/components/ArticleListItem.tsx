@@ -97,7 +97,7 @@ export const ArticleListItem: React.FC<ArticleListItemProps> = React.memo(({
             source={article.source}
             sourceId={article.source_id}
             domain={article.domain}
-            aspectRatio="square"
+            aspectRatio="auto"
             className="w-full h-full object-cover"
           />
         </div>

@@ -20,6 +20,7 @@ export class NewsHandler {
       const fromDate = q.fromDate || q.from_date || q.from;
       const toDate = q.toDate || q.to_date || q.to;
       const sort = (q.sort || 'latest') as any;
+      const idsParam = q.ids ? (q.ids as string).split(',').map(s => s.trim()).filter(Boolean) : undefined;
 
       const cacheKey = `news:query:${JSON.stringify(q)}`;
       const cached = await cacheService.get(cacheKey);
@@ -45,7 +46,8 @@ export class NewsHandler {
         channel,
         fromDate,
         toDate,
-        sort
+        sort,
+        ids: idsParam
       });
 
       const payload = {
