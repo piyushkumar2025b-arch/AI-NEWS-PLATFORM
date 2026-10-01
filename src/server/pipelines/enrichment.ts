@@ -80,20 +80,6 @@ export class EnrichmentPipeline {
       sanitizeArticleMedia(art);
     }
 
-    // Ensure every article is guaranteed to have authentic, high-resolution photography
-    for (const art of enriched) {
-      if (!art.image_url || isLowQualityMedia(art.image_url) || !art.media || art.media.length === 0 || art.media.every(m => isLowQualityMedia(m.url))) {
-        const photo = getEditorialImage(art.title, art.category, art.source_id, art.domain);
-        art.image_url = photo;
-        art.media = [{
-          type: 'image',
-          url: photo,
-          title: art.title,
-          source: 'editorial'
-        }];
-      }
-    }
-
     return enriched;
   }
 }

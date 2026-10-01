@@ -136,20 +136,9 @@ export class NewsRepository {
               updatedCount++;
             }
 
-            if (!art.image_url) {
-              const editorial = getEditorialImage(art.title, art.category, art.source_id, art.domain);
-              if (editorial) {
-                art.image_url = editorial;
-                if (!art.media) art.media = [];
-                if (!art.media.some((m: any) => m.url === editorial)) {
-                  art.media.unshift({
-                    type: 'image',
-                    url: editorial,
-                    mimeType: 'image/jpeg',
-                    source: 'publisher'
-                  });
-                }
-              }
+            if (art.image_url && isLowQualityMedia(art.image_url)) {
+              art.image_url = null;
+              art.media = (art.media || []).filter((m: any) => !isLowQualityMedia(m.url));
             }
 
             this.insertDirect(art);
@@ -390,6 +379,10 @@ export class NewsRepository {
 
   public insertDirect(article: Article) {
     sanitizeArticleMedia(article);
+    if (article.image_url && isLowQualityMedia(article.image_url)) {
+      article.image_url = null;
+      article.media = (article.media || []).filter((m: any) => !isLowQualityMedia(m.url));
+    }
     this.getTimestamp(article);
     this.articles.set(article.id, article);
     this.isChronologicalDirty = true;
@@ -635,8 +628,14 @@ export class NewsRepository {
       const maxAllowedLimit = options.maxLimit || 500;
       const limit = Math.min(maxAllowedLimit, Math.max(1, options.limit || 30));
       const offset = (page - 1) * limit;
+      const paginated = feed.slice(offset, offset + limit);
+      for (const a of paginated) {
+        if (a.image_url && isLowQualityMedia(a.image_url)) {
+          a.image_url = null;
+        }
+      }
       return {
-        articles: feed.slice(offset, offset + limit),
+        articles: paginated,
         total: feed.length
       };
     }
@@ -769,6 +768,11 @@ export class NewsRepository {
     const limit = Math.min(maxAllowedLimit, Math.max(1, options.limit || 30));
     const offset = (page - 1) * limit;
     const paginated = resultList.slice(offset, offset + limit);
+    for (const a of paginated) {
+      if (a.image_url && isLowQualityMedia(a.image_url)) {
+        a.image_url = null;
+      }
+    }
 
     return { articles: paginated, total };
   }

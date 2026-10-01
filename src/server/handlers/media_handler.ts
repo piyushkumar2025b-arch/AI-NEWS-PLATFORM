@@ -45,6 +45,44 @@ export class MediaHandler {
   }
 
   /**
+   * Dynamically resolves genuine OpenGraph/publisher media for an article on-demand.
+   */
+  public async resolveArticleMedia(req: any, res: any) {
+    const rawUrl = req.query.url as string;
+    const articleId = req.query.articleId as string;
+
+    if (!rawUrl || typeof rawUrl !== 'string') {
+      return res.status(400).json({ success: false, error: 'Missing url parameter' });
+    }
+
+    try {
+      const resolved = await mediaResolver.resolveMedia(rawUrl);
+      if (resolved?.imageUrl) {
+        if (articleId) {
+          const { newsRepository } = await import('../database/repository.js');
+          const art = newsRepository.getArticleById(articleId);
+          if (art) {
+            art.image_url = resolved.imageUrl;
+            if (!art.media) art.media = [];
+            if (!art.media.some(m => m.url === resolved.imageUrl)) {
+              art.media.unshift({
+                type: 'image',
+                url: resolved.imageUrl,
+                source: 'publisher'
+              });
+            }
+            newsRepository.updateArticle(art);
+          }
+        }
+        return res.json({ success: true, imageUrl: resolved.imageUrl });
+      }
+      return res.json({ success: false, imageUrl: null });
+    } catch {
+      return res.json({ success: false, imageUrl: null });
+    }
+  }
+
+  /**
    * Generates or delivers a real, high-resolution photography image for any article.
    */
   public renderCard(req: any, res: any) {
@@ -289,7 +327,7 @@ export class MediaHandler {
           agent,
           lookup: safeLookup,
           headers: defaultHeaders,
-          timeout: 6000,
+          timeout: 2500,
         },
         async upstreamRes => {
           // Follow redirects internally to eliminate client roundtrips

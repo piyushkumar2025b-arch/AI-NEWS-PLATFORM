@@ -1,8 +1,13 @@
 import dns from 'dns';
+import http from 'http';
+import https from 'https';
 import { extractDomain } from '../utils/urls.js';
 import { isLowQualityMedia, upgradeMediaQuality } from '../utils/media_quality.js';
 
 export class MediaResolver {
+  private resolvedCache = new Map<string, string | null>();
+  private readonly maxCacheSize = 2000;
+
   private parseIpv4ToNumber(parts: number[]): number {
     return ((parts[0] << 24) >>> 0) + (parts[1] << 16) + (parts[2] << 8) + parts[3];
   }
@@ -108,7 +113,7 @@ export class MediaResolver {
         return false;
       }
 
-      const lookup = await dns.promises.lookup(host, { all: true });
+      const lookup = await dns.promises.lookup(host, { family: 4, all: true });
       for (const entry of lookup) {
         if (this.isPrivateOrRestrictedHost(entry.address)) {
           return false;
@@ -120,68 +125,169 @@ export class MediaResolver {
     }
   }
 
-  async resolveMedia(url: string): Promise<{ imageUrl?: string; ogTitle?: string } | null> {
-    if (!url || typeof url !== 'string') return null;
-    const isSafe = await this.verifyDnsSafety(url);
-    if (!isSafe) return null;
+  async resolveMedia(targetUrl: string, maxRedirects: number = 3): Promise<{ imageUrl?: string; ogTitle?: string } | null> {
+    if (!targetUrl || typeof targetUrl !== 'string') return null;
+    const cleanUrl = targetUrl.trim();
 
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 3500);
-
-      const res = await fetch(url, {
-        signal: controller.signal,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': 'en-US,en;q=0.9',
-        },
-      });
-      clearTimeout(timeout);
-
-      if (!res.ok) return null;
-
-      // Stream up to 100KB to parse head meta tags quickly without downloading full heavy page
-      const reader = res.body?.getReader();
-      if (!reader) return null;
-
-      let receivedBytes = 0;
-      const chunks: Uint8Array[] = [];
-      while (receivedBytes < 100000) {
-        const { done, value } = await reader.read();
-        if (done || !value) break;
-        chunks.push(value);
-        receivedBytes += value.length;
-      }
-      reader.cancel().catch(() => {});
-
-      const html = Buffer.concat(chunks).toString('utf8');
-
-      // Match og:image, twitter:image, or article lead image
-      const ogMatch =
-        html.match(/<meta[^>]+(?:property|name)=["'](?:og:image|twitter:image|twitter:image:src)["'][^>]+content=["']([^"']+)["']/i) ||
-        html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["'](?:og:image|twitter:image|twitter:image:src)["']/i) ||
-        html.match(/<link[^>]+rel=["']image_src["'][^>]+href=["']([^"']+)["']/i);
-
-      if (ogMatch && ogMatch[1]) {
-        let rawImg = ogMatch[1].trim();
-        if (rawImg.startsWith('//')) {
-          rawImg = 'https:' + rawImg;
-        } else if (rawImg.startsWith('/')) {
-          const parsed = new URL(url);
-          rawImg = `${parsed.protocol}//${parsed.host}${rawImg}`;
-        }
-
-        if (rawImg.startsWith('http') && !isLowQualityMedia(rawImg)) {
-          const upgraded = upgradeMediaQuality(rawImg);
-          return { imageUrl: upgraded || rawImg };
-        }
-      }
-    } catch {
-      // Graceful on network/timeout errors
+    if (this.resolvedCache.has(cleanUrl)) {
+      const cached = this.resolvedCache.get(cleanUrl);
+      return cached ? { imageUrl: cached } : null;
     }
 
-    return null;
+    // Immediate YouTube video thumbnail extraction
+    const ytMatch = cleanUrl.match(/(?:youtube\.com\/(?:watch\?v=|v\/|embed\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/i);
+    if (ytMatch) {
+      const ytImg = `https://i.ytimg.com/vi/${ytMatch[1]}/hqdefault.jpg`;
+      this.cacheResult(cleanUrl, ytImg);
+      return { imageUrl: ytImg };
+    }
+
+    const isSafe = await this.verifyDnsSafety(cleanUrl);
+    if (!isSafe) {
+      this.cacheResult(cleanUrl, null);
+      return null;
+    }
+
+    return new Promise(resolve => {
+      try {
+        const parsed = new URL(cleanUrl);
+        const client = parsed.protocol === 'https:' ? https : http;
+
+        const req = client.get(
+          parsed,
+          {
+            family: 4, // Explicitly enforce IPv4 to eliminate container IPv6 black-hole stalling
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+              'Accept-Language': 'en-US,en;q=0.9',
+            },
+            timeout: 3000,
+          },
+          res => {
+            // Handle redirects
+            if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && maxRedirects > 0) {
+              req.destroy();
+              try {
+                const nextUrl = new URL(res.headers.location, cleanUrl).toString();
+                return resolve(this.resolveMedia(nextUrl, maxRedirects - 1));
+              } catch {
+                this.cacheResult(cleanUrl, null);
+                return resolve(null);
+              }
+            }
+
+            if (!res.statusCode || res.statusCode < 200 || res.statusCode >= 400) {
+              req.destroy();
+              this.cacheResult(cleanUrl, null);
+              return resolve(null);
+            }
+
+            let html = '';
+            let resolved = false;
+
+            res.on('data', chunk => {
+              if (resolved) return;
+              html += chunk.toString('utf8');
+
+              // 1. Meta tag inspection
+              const ogMatch =
+                html.match(/<meta[^>]+(?:property|name)=["'](?:og:image|og:image:secure_url|twitter:image|twitter:image:src)["'][^>]+content=["']([^"']+)["']/i) ||
+                html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["'](?:og:image|og:image:secure_url|twitter:image|twitter:image:src)["']/i) ||
+                html.match(/<link[^>]+rel=["']image_src["'][^>]+href=["']([^"']+)["']/i);
+
+              if (ogMatch && ogMatch[1]) {
+                resolved = true;
+                req.destroy();
+                const cleanImg = this.sanitizeExtractedUrl(ogMatch[1].trim(), cleanUrl);
+                if (cleanImg) {
+                  this.cacheResult(cleanUrl, cleanImg);
+                  return resolve({ imageUrl: cleanImg });
+                }
+              }
+
+              // 2. Schema.org JSON-LD image inspection
+              const jsonLdMatch = html.match(/"image"\s*:\s*(?:\[\s*)?["'](https?:\/\/[^"']+)["']/i);
+              if (jsonLdMatch && jsonLdMatch[1]) {
+                resolved = true;
+                req.destroy();
+                const cleanImg = this.sanitizeExtractedUrl(jsonLdMatch[1].trim(), cleanUrl);
+                if (cleanImg) {
+                  this.cacheResult(cleanUrl, cleanImg);
+                  return resolve({ imageUrl: cleanImg });
+                }
+              }
+
+              // Cut off stream after </head> or 120KB to prevent downloading entire page
+              if (html.includes('</head>') || html.length > 120000) {
+                resolved = true;
+                req.destroy();
+                this.cacheResult(cleanUrl, null);
+                return resolve(null);
+              }
+            });
+
+            res.on('end', () => {
+              if (!resolved) {
+                this.cacheResult(cleanUrl, null);
+                resolve(null);
+              }
+            });
+
+            res.on('error', () => {
+              if (!resolved) {
+                this.cacheResult(cleanUrl, null);
+                resolve(null);
+              }
+            });
+          }
+        );
+
+        req.on('timeout', () => {
+          req.destroy();
+          this.cacheResult(cleanUrl, null);
+          resolve(null);
+        });
+
+        req.on('error', () => {
+          this.cacheResult(cleanUrl, null);
+          resolve(null);
+        });
+      } catch {
+        this.cacheResult(cleanUrl, null);
+        resolve(null);
+      }
+    });
+  }
+
+  private sanitizeExtractedUrl(rawImg: string, baseUrl: string): string | null {
+    if (!rawImg) return null;
+    let url = rawImg;
+    if (url.startsWith('//')) {
+      url = 'https:' + url;
+    } else if (url.startsWith('/')) {
+      try {
+        const parsed = new URL(baseUrl);
+        url = `${parsed.protocol}//${parsed.host}${url}`;
+      } catch {
+        return null;
+      }
+    }
+
+    if (!url.startsWith('http') || isLowQualityMedia(url)) {
+      return null;
+    }
+
+    const upgraded = upgradeMediaQuality(url);
+    return upgraded || url;
+  }
+
+  private cacheResult(url: string, result: string | null) {
+    if (this.resolvedCache.size >= this.maxCacheSize) {
+      const first = this.resolvedCache.keys().next().value;
+      if (first) this.resolvedCache.delete(first);
+    }
+    this.resolvedCache.set(url, result);
   }
 }
 

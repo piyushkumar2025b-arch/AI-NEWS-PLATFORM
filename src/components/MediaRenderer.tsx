@@ -78,7 +78,7 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
   const allMediaUrls = [articleUrl, videoAsset?.url, fallbackImageUrl, ...(media || []).map(m => m.url)].filter(Boolean).join(' ');
   const ytVideoId = extractYouTubeId(allMediaUrls);
 
-  // Compute prioritized image candidates list
+  // Compute prioritized genuine image candidates list (strictly real media)
   const imageCandidates = useMemo<string[]>(() => {
     const candidates: string[] = [];
 
@@ -88,15 +88,14 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
       candidates.push(`https://i.ytimg.com/vi/${ytVideoId}/maxresdefault.jpg`);
     }
 
-    // 2. Try genuine image asset or fallback URL with quality upgrades
+    // 2. Try genuine image asset or fallback URL with quality upgrades (strictly real media, no stock photos)
     const rawImage = imageAsset?.url || fallbackImageUrl;
-    if (rawImage && !isLowQualityMedia(rawImage)) {
+    if (rawImage && !isLowQualityMedia(rawImage) && !rawImage.startsWith('/assets/editorial/')) {
       const upgraded = upgradeMediaQuality(rawImage);
       if (upgraded && !candidates.includes(upgraded)) {
         candidates.push(upgraded);
       }
-      // If upgraded is different from raw, add raw as secondary fallback
-      if (rawImage && upgraded !== rawImage && !isLowQualityMedia(rawImage) && !candidates.includes(rawImage)) {
+      if (rawImage && upgraded !== rawImage && !candidates.includes(rawImage)) {
         candidates.push(rawImage);
       }
     }
@@ -104,7 +103,7 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
     // 3. Check any other images in media array
     if (media) {
       for (const m of media) {
-        if (m.type === 'image' && m.url && !isLowQualityMedia(m.url)) {
+        if (m.type === 'image' && m.url && !isLowQualityMedia(m.url) && !m.url.startsWith('/assets/editorial/')) {
           const up = upgradeMediaQuality(m.url) || m.url;
           if (up && !candidates.includes(up)) {
             candidates.push(up);
@@ -113,59 +112,80 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
       }
     }
 
-    // 4. Topic-matched genuine tech photography candidates (guarantees real photos)
-    const editorialPhotos = getEditorialImageCandidates(title, category, sourceId, domain);
-    for (const ep of editorialPhotos) {
-      if (ep && !candidates.includes(ep)) {
-        candidates.push(ep);
-      }
-    }
-
     return candidates;
-  }, [ytVideoId, imageAsset?.url, fallbackImageUrl, media, title, category, sourceId, domain]);
+  }, [ytVideoId, imageAsset?.url, fallbackImageUrl, media]);
 
   const [candidateIndex, setCandidateIndex] = useState<number>(0);
   const [imageLoaded, setImageLoaded] = useState<boolean>(false);
   const [isPlayingVideo, setIsPlayingVideo] = useState<boolean>(false);
+  const [resolvedImageUrl, setResolvedImageUrl] = useState<string | null>(null);
+  const imgRef = React.useRef<HTMLImageElement>(null);
 
-  // Reset state when input media changes
+  // If no image candidates exist upfront, dynamically resolve the REAL OpenGraph image from the publisher URL
+  useEffect(() => {
+    if (imageCandidates.length > 0 || !articleUrl || !articleUrl.startsWith('http')) return;
+    let active = true;
+    fetch(`/api/v1/media/resolve?url=${encodeURIComponent(articleUrl)}`)
+      .then(res => res.json())
+      .then(data => {
+        if (active && data.success && data.imageUrl && !data.imageUrl.startsWith('/assets/editorial/')) {
+          setResolvedImageUrl(data.imageUrl);
+        }
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [articleUrl, imageCandidates.length]);
+
+  // Reset state when input candidates change
   useEffect(() => {
     setCandidateIndex(0);
-    const firstCandidate = imageCandidates[0] || null;
-    setImageLoaded(firstCandidate ? loadedImagesCache.has(firstCandidate) : false);
     setIsPlayingVideo(false);
-  }, [imageCandidates]);
+  }, [imageCandidates[0]]);
 
-  const currentRawUrl = imageCandidates[candidateIndex] || null;
+  const currentRawUrl = imageCandidates[candidateIndex] || resolvedImageUrl || null;
+  const rawDisplaySrc = currentRawUrl;
 
-  // Immediate cache hit detection
-  useEffect(() => {
-    if (currentRawUrl && loadedImagesCache.has(currentRawUrl)) {
-      setImageLoaded(true);
+  // If rawDisplaySrc is an http: link and page is https / iframe, proxy it to prevent mixed content blocking
+  const displaySrc = useMemo(() => {
+    if (!rawDisplaySrc) return null;
+    if (rawDisplaySrc.startsWith('http://')) {
+      return `/api/v1/media/proxy?url=${encodeURIComponent(rawDisplaySrc)}&title=${encodeURIComponent(title)}&category=${encodeURIComponent(category)}`;
     }
-  }, [currentRawUrl]);
-
-  const aspectClass =
-    aspectRatio === 'video' ? 'aspect-video' : aspectRatio === 'square' ? 'aspect-square' : 'h-full w-full';
-
-  const finalSrc = currentRawUrl;
+    return rawDisplaySrc;
+  }, [rawDisplaySrc, title, category]);
 
   const handleImageLoad = () => {
     setImageLoaded(true);
-    if (currentRawUrl) loadedImagesCache.add(currentRawUrl);
+    if (displaySrc) loadedImagesCache.add(displaySrc);
   };
 
   const handleImageError = () => {
     // Instantly advance to next candidate in waterfall (zero proxy stalling)
     if (candidateIndex + 1 < imageCandidates.length) {
-      setImageLoaded(false);
       setCandidateIndex(prev => prev + 1);
       return;
     }
-
-    // All candidates exhausted
     setCandidateIndex(imageCandidates.length);
   };
+
+  // Immediate cache hit detection and error check
+  useEffect(() => {
+    if (displaySrc && loadedImagesCache.has(displaySrc)) {
+      setImageLoaded(true);
+    }
+    if (imgRef.current && imgRef.current.complete) {
+      if (imgRef.current.naturalWidth > 0) {
+        setImageLoaded(true);
+      } else {
+        handleImageError();
+      }
+    }
+  }, [displaySrc]);
+
+  const aspectClass =
+    aspectRatio === 'video' ? 'aspect-video' : aspectRatio === 'square' ? 'aspect-square' : 'h-full w-full';
+
+  const finalSrc = displaySrc;
 
   // Determine media badge label & style
   let badgeLabel = 'News';
@@ -450,15 +470,12 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
   }
 
   // 4. Primary Image Rendering
-  const displaySrc = (finalSrc && candidateIndex < imageCandidates.length)
-    ? finalSrc
-    : (showEditorialFallback ? getEditorialImage(title, category, sourceId, domain) : null);
-
   if (!displaySrc) return null;
 
   return (
-    <div className={`group/media relative w-full overflow-hidden rounded-xs bg-stone-200/50 border-0 ${aspectClass} ${className}`}>
+    <div className={`group/media relative w-full overflow-hidden rounded-xs bg-stone-100 border-0 ${aspectClass} ${className}`}>
       <img
+        ref={imgRef}
         src={displaySrc}
         alt={title || 'Article visual'}
         referrerPolicy="no-referrer"
@@ -468,9 +485,7 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
         height="360"
         onLoad={handleImageLoad}
         onError={handleImageError}
-        className={`h-full w-full object-cover transform-gpu transition-opacity duration-200 group-hover/media:scale-[1.015] ${
-          imageLoaded ? 'opacity-100' : 'opacity-0'
-        }`}
+        className="h-full w-full object-cover transform-gpu transition-transform duration-300 group-hover/media:scale-[1.015]"
       />
     </div>
   );

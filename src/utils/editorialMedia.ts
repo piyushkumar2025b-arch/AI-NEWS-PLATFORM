@@ -61,14 +61,16 @@ export const TOPIC_PHOTOGRAPHY: Record<string, string[]> = {
     'https://images.unsplash.com/photo-1620712943543-bcc4688e7485?w=800&auto=format&fit=crop&q=80',
   ],
   code_devtools: [
+    '/assets/editorial/cybersecurity.jpg',
+    '/assets/editorial/silicon_chips.jpg',
     'https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=800&auto=format&fit=crop&q=80',
     'https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=800&auto=format&fit=crop&q=80',
-    '/assets/editorial/cybersecurity.jpg',
   ],
   finance_enterprise: [
+    '/assets/editorial/datacenter.jpg',
+    '/assets/editorial/silicon_chips.jpg',
     'https://images.unsplash.com/photo-1590283603385-17ffb3a7f29f?w=800&auto=format&fit=crop&q=80',
     'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=800&auto=format&fit=crop&q=80',
-    '/assets/editorial/datacenter.jpg',
   ]
 };
 

@@ -48,6 +48,12 @@ export const ArticleCard: React.FC<ArticleCardProps> = React.memo(({
   const displayDate = article.published_at || article.seen_at;
   const isVideo = article.source_type === 'video' || article.media?.some(m => m.type === 'video');
   const isAudio = article.source_type === 'podcast' || article.media?.some(m => m.type === 'audio');
+  const hasRealMedia = Boolean(
+    isVideo ||
+    isAudio ||
+    (article.image_url && !article.image_url.startsWith('/assets/editorial/')) ||
+    (article.media && article.media.some(m => !m.url.startsWith('/assets/editorial/')))
+  );
 
   // Hero Lead Layout (Grand editorial focal point for top story)
   if (isHero) {
@@ -57,9 +63,9 @@ export const ArticleCard: React.FC<ArticleCardProps> = React.memo(({
         className="group relative cursor-pointer pb-8 border-b border-stone-200/70"
         onClick={() => onInspect(article)}
       >
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
-          {/* Left: Headline & Excerpt */}
-          <div className="lg:col-span-7 flex flex-col justify-center space-y-4">
+        <div className={`grid grid-cols-1 ${hasRealMedia ? 'lg:grid-cols-12' : ''} gap-8 items-center`}>
+          {/* Headline & Excerpt */}
+          <div className={`${hasRealMedia ? 'lg:col-span-7' : 'max-w-4xl'} flex flex-col justify-center space-y-4`}>
             {/* Editorial Kicker */}
             <div className="flex items-center gap-2 text-xs uppercase tracking-wider font-medium text-stone-500">
               <span
@@ -117,27 +123,29 @@ export const ArticleCard: React.FC<ArticleCardProps> = React.memo(({
             </div>
           </div>
 
-          {/* Right: Large Featured Media */}
-          <div className="lg:col-span-5 relative overflow-hidden rounded-xs bg-stone-100">
-            <MediaRenderer
-              media={article.media}
-              fallbackImageUrl={article.image_url}
-              articleUrl={article.url}
-              title={article.title}
-              category={article.category}
-              source={article.source}
-              sourceId={article.source_id}
-              domain={article.domain}
-              aspectRatio="video"
-              className="w-full transform group-hover:scale-[1.01] transition-transform duration-300"
-            />
-            {isVideo && (
-              <div className="absolute bottom-3 left-3 bg-stone-900/80 text-white text-[11px] px-2 py-0.5 rounded-xs flex items-center gap-1 backdrop-blur-xs">
-                <Play className="h-3 w-3 fill-white" />
-                <span>Video</span>
-              </div>
-            )}
-          </div>
+          {/* Right: Large Featured Media (Only rendered when real media exists) */}
+          {hasRealMedia && (
+            <div className="lg:col-span-5 relative overflow-hidden rounded-xs bg-stone-100">
+              <MediaRenderer
+                media={article.media}
+                fallbackImageUrl={article.image_url}
+                articleUrl={article.url}
+                title={article.title}
+                category={article.category}
+                source={article.source}
+                sourceId={article.source_id}
+                domain={article.domain}
+                aspectRatio="video"
+                className="w-full transform group-hover:scale-[1.01] transition-transform duration-300"
+              />
+              {isVideo && (
+                <div className="absolute bottom-3 left-3 bg-stone-900/80 text-white text-[11px] px-2 py-0.5 rounded-xs flex items-center gap-1 backdrop-blur-xs">
+                  <Play className="h-3 w-3 fill-white" />
+                  <span>Video</span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </article>
     );
@@ -153,33 +161,35 @@ export const ArticleCard: React.FC<ArticleCardProps> = React.memo(({
       onClick={() => onInspect(article)}
     >
       <div className="space-y-3">
-        {/* Media (if present) */}
-        <div className="relative overflow-hidden rounded-xs bg-stone-100">
-          <MediaRenderer
-            media={article.media}
-            fallbackImageUrl={article.image_url}
-            articleUrl={article.url}
-            title={article.title}
-            category={article.category}
-            source={article.source}
-            sourceId={article.source_id}
-            domain={article.domain}
-            aspectRatio="video"
-            className="w-full transform group-hover:scale-[1.01] transition-transform duration-300"
-          />
-          {isVideo && (
-            <div className="absolute bottom-2 left-2 bg-stone-900/80 text-white text-[10px] px-1.5 py-0.5 rounded-xs flex items-center gap-1 backdrop-blur-xs">
-              <Play className="h-2.5 w-2.5 fill-white" />
-              <span>Video</span>
-            </div>
-          )}
-          {isAudio && (
-            <div className="absolute bottom-2 left-2 bg-stone-900/80 text-white text-[10px] px-1.5 py-0.5 rounded-xs flex items-center gap-1 backdrop-blur-xs">
-              <Volume2 className="h-2.5 w-2.5" />
-              <span>Audio</span>
-            </div>
-          )}
-        </div>
+        {/* Real Media (only rendered if verified genuine media exists) */}
+        {hasRealMedia && (
+          <div className="relative overflow-hidden rounded-xs bg-stone-100">
+            <MediaRenderer
+              media={article.media}
+              fallbackImageUrl={article.image_url}
+              articleUrl={article.url}
+              title={article.title}
+              category={article.category}
+              source={article.source}
+              sourceId={article.source_id}
+              domain={article.domain}
+              aspectRatio="video"
+              className="w-full transform group-hover:scale-[1.01] transition-transform duration-300"
+            />
+            {isVideo && (
+              <div className="absolute bottom-2 left-2 bg-stone-900/80 text-white text-[10px] px-1.5 py-0.5 rounded-xs flex items-center gap-1 backdrop-blur-xs">
+                <Play className="h-2.5 w-2.5 fill-white" />
+                <span>Video</span>
+              </div>
+            )}
+            {isAudio && (
+              <div className="absolute bottom-2 left-2 bg-stone-900/80 text-white text-[10px] px-1.5 py-0.5 rounded-xs flex items-center gap-1 backdrop-blur-xs">
+                <Volume2 className="h-2.5 w-2.5" />
+                <span>Audio</span>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Quiet Editorial Kicker */}
         <div className="flex items-center justify-between text-xs text-stone-500">
