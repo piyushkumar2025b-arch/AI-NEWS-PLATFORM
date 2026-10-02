@@ -118,6 +118,14 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
     : 'Recent';
 
   const readTime = fullContent?.readingTimeMinutes || 3;
+  const isVideo = article.source_type === 'video' || article.media?.some(m => m.type === 'video');
+  const isAudio = article.source_type === 'podcast' || article.media?.some(m => m.type === 'audio');
+  const hasRealMedia = Boolean(
+    isVideo ||
+    isAudio ||
+    (article.image_url && !article.image_url.startsWith('/assets/editorial/')) ||
+    (article.media && article.media.some(m => m.url && !m.url.startsWith('/assets/editorial/')))
+  );
 
   return (
     <div
@@ -205,20 +213,22 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
           </div>
 
           {/* Featured Media / Video Player */}
-          <div className="overflow-hidden rounded-xs bg-stone-100">
-            <MediaRenderer
-              media={article.media}
-              fallbackImageUrl={article.image_url}
-              articleUrl={article.url}
-              title={article.title}
-              category={article.category}
-              source={article.source}
-              sourceId={article.source_id}
-              domain={article.domain}
-              aspectRatio="video"
-              className="w-full"
-            />
-          </div>
+          {hasRealMedia && (
+            <div className="overflow-hidden rounded-xs bg-stone-100">
+              <MediaRenderer
+                media={article.media}
+                fallbackImageUrl={article.image_url}
+                articleUrl={article.url}
+                title={article.title}
+                category={article.category}
+                source={article.source}
+                sourceId={article.source_id}
+                domain={article.domain}
+                aspectRatio="video"
+                className="w-full"
+              />
+            </div>
+          )}
 
           {/* Key Editorial Takeaways (if present) */}
           {fullContent?.keyTakeaways && fullContent.keyTakeaways.length > 0 && (

@@ -88,9 +88,18 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
       candidates.push(`https://i.ytimg.com/vi/${ytVideoId}/maxresdefault.jpg`);
     }
 
-    // 2. Try genuine image asset or fallback URL with quality upgrades (strictly real media, no stock photos)
-    const rawImage = imageAsset?.url || fallbackImageUrl;
+    // 2. If GitHub repo URL, extract official OpenGraph repo card
+    const ghMatch = (articleUrl || '').match(/^https?:\/\/github\.com\/([a-zA-Z0-9._-]+)\/([a-zA-Z0-9._-]+)(?:\/|$)/i);
+    if (ghMatch && !['features', 'topics', 'trending', 'collections', 'events', 'pricing', 'about', 'login', 'signup'].includes(ghMatch[1].toLowerCase())) {
+      candidates.push(`https://opengraph.githubassets.com/1/${ghMatch[1]}/${ghMatch[2]}`);
+    }
+
+    // 3. Try genuine image asset or fallback URL with quality upgrades (strictly real media, no stock photos)
+    let rawImage = imageAsset?.url || fallbackImageUrl;
     if (rawImage && !isLowQualityMedia(rawImage) && !rawImage.startsWith('/assets/editorial/')) {
+      if (rawImage.startsWith('http://')) {
+        rawImage = rawImage.replace('http://', 'https://');
+      }
       const upgraded = upgradeMediaQuality(rawImage);
       if (upgraded && !candidates.includes(upgraded)) {
         candidates.push(upgraded);
@@ -100,11 +109,13 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
       }
     }
 
-    // 3. Check any other images in media array
+    // 4. Check any other images in media array
     if (media) {
       for (const m of media) {
         if (m.type === 'image' && m.url && !isLowQualityMedia(m.url) && !m.url.startsWith('/assets/editorial/')) {
-          const up = upgradeMediaQuality(m.url) || m.url;
+          let u = m.url;
+          if (u.startsWith('http://')) u = u.replace('http://', 'https://');
+          const up = upgradeMediaQuality(u) || u;
           if (up && !candidates.includes(up)) {
             candidates.push(up);
           }
@@ -113,7 +124,7 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
     }
 
     return candidates;
-  }, [ytVideoId, imageAsset?.url, fallbackImageUrl, media]);
+  }, [ytVideoId, imageAsset?.url, fallbackImageUrl, media, articleUrl]);
 
   const [candidateIndex, setCandidateIndex] = useState<number>(0);
   const [imageLoaded, setImageLoaded] = useState<boolean>(false);
@@ -125,16 +136,19 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
   useEffect(() => {
     if (imageCandidates.length > 0 || !articleUrl || !articleUrl.startsWith('http')) return;
     let active = true;
-    fetch(`/api/v1/media/resolve?url=${encodeURIComponent(articleUrl)}`)
+    const resolveUrl = `/api/v1/media/resolve?url=${encodeURIComponent(articleUrl)}&title=${encodeURIComponent(title || '')}`;
+    fetch(resolveUrl)
       .then(res => res.json())
       .then(data => {
         if (active && data.success && data.imageUrl && !data.imageUrl.startsWith('/assets/editorial/')) {
-          setResolvedImageUrl(data.imageUrl);
+          let clean = data.imageUrl;
+          if (clean.startsWith('http://')) clean = clean.replace('http://', 'https://');
+          setResolvedImageUrl(clean);
         }
       })
       .catch(() => {});
     return () => { active = false; };
-  }, [articleUrl, imageCandidates.length]);
+  }, [articleUrl, imageCandidates.length, title]);
 
   // Reset state when input candidates change
   useEffect(() => {
@@ -145,14 +159,15 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
   const currentRawUrl = imageCandidates[candidateIndex] || resolvedImageUrl || null;
   const rawDisplaySrc = currentRawUrl;
 
-  // If rawDisplaySrc is an http: link and page is https / iframe, proxy it to prevent mixed content blocking
+  // Upgrade HTTP to HTTPS directly to eliminate mixed content blocking and proxy roundtrips
   const displaySrc = useMemo(() => {
     if (!rawDisplaySrc) return null;
-    if (rawDisplaySrc.startsWith('http://')) {
-      return `/api/v1/media/proxy?url=${encodeURIComponent(rawDisplaySrc)}&title=${encodeURIComponent(title)}&category=${encodeURIComponent(category)}`;
+    let url = rawDisplaySrc.trim();
+    if (url.startsWith('http://')) {
+      url = url.replace('http://', 'https://');
     }
-    return rawDisplaySrc;
-  }, [rawDisplaySrc, title, category]);
+    return url;
+  }, [rawDisplaySrc]);
 
   const handleImageLoad = () => {
     setImageLoaded(true);
@@ -160,7 +175,7 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
   };
 
   const handleImageError = () => {
-    // Instantly advance to next candidate in waterfall (zero proxy stalling)
+    // Instantly advance to next candidate in waterfall
     if (candidateIndex + 1 < imageCandidates.length) {
       setCandidateIndex(prev => prev + 1);
       return;
@@ -168,17 +183,13 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
     setCandidateIndex(imageCandidates.length);
   };
 
-  // Immediate cache hit detection and error check
+  // Immediate cache hit detection
   useEffect(() => {
     if (displaySrc && loadedImagesCache.has(displaySrc)) {
       setImageLoaded(true);
     }
-    if (imgRef.current && imgRef.current.complete) {
-      if (imgRef.current.naturalWidth > 0) {
-        setImageLoaded(true);
-      } else {
-        handleImageError();
-      }
+    if (imgRef.current && imgRef.current.complete && imgRef.current.naturalWidth > 0) {
+      setImageLoaded(true);
     }
   }, [displaySrc]);
 
@@ -344,7 +355,7 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
       );
     }
 
-    const videoThumbnail = finalSrc || getEditorialImage(title, category, sourceId, domain);
+    const videoThumbnail = finalSrc || (ytVideoId ? `https://i.ytimg.com/vi/${ytVideoId}/hqdefault.jpg` : null);
 
     // Video preview with high-res 16:9 thumbnail and Play overlay
     return (
@@ -352,18 +363,24 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
         onClick={() => setIsPlayingVideo(true)}
         className={`group relative w-full overflow-hidden rounded-xl bg-stone-900 ${aspectClass} ${className} cursor-pointer select-none border border-stone-800/60 shadow-xs`}
       >
-        <img
-          src={videoThumbnail}
-          alt={title}
-          referrerPolicy="no-referrer"
-          loading="lazy"
-          decoding="async"
-          className={`h-full w-full object-cover transition-all duration-300 group-hover:scale-[1.02] ${
-            imageLoaded ? 'opacity-100' : 'opacity-90'
-          }`}
-          onLoad={handleImageLoad}
-          onError={handleImageError}
-        />
+        {videoThumbnail ? (
+          <img
+            src={videoThumbnail}
+            alt={title}
+            referrerPolicy="no-referrer"
+            loading="lazy"
+            decoding="async"
+            className={`h-full w-full object-cover transition-all duration-300 group-hover:scale-[1.02] ${
+              imageLoaded ? 'opacity-100' : 'opacity-90'
+            }`}
+            onLoad={handleImageLoad}
+            onError={handleImageError}
+          />
+        ) : (
+          <div className="h-full w-full bg-linear-to-br from-stone-900 via-stone-850 to-stone-950 flex flex-col justify-end p-6">
+            <span className="text-white/80 font-editorial text-lg line-clamp-2">{title}</span>
+          </div>
+        )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent transition-colors group-hover:via-black/10" />
 
         {/* Center Play Button */}

@@ -49,6 +49,7 @@ export class MediaHandler {
    */
   public async resolveArticleMedia(req: any, res: any) {
     const rawUrl = req.query.url as string;
+    const title = req.query.title as string;
     const articleId = req.query.articleId as string;
 
     if (!rawUrl || typeof rawUrl !== 'string') {
@@ -56,7 +57,7 @@ export class MediaHandler {
     }
 
     try {
-      const resolved = await mediaResolver.resolveMedia(rawUrl);
+      const resolved = await mediaResolver.resolveMedia(rawUrl, title);
       if (resolved?.imageUrl) {
         if (articleId) {
           const { newsRepository } = await import('../database/repository.js');
@@ -255,20 +256,7 @@ export class MediaHandler {
 
   private sendFallbackCard(res: any, title: string, category: string, sourceId: string, domain: string) {
     if (res.headersSent) return;
-    const photoUrl = getEditorialImage(title, category, sourceId, domain);
-    if (photoUrl.startsWith('/')) {
-      const publicPath = path.join(process.cwd(), 'public', photoUrl);
-      if (fs.existsSync(publicPath)) {
-        const buffer = fs.readFileSync(publicPath);
-        res.setHeader('Content-Type', 'image/jpeg');
-        res.setHeader('Content-Length', buffer.length);
-        res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=3600');
-        res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        return res.status(200).end(buffer);
-      }
-    }
-    return res.redirect(302, photoUrl);
+    return res.status(404).json({ success: false, error: 'Media unavailable' });
   }
 
   /**
@@ -289,7 +277,7 @@ export class MediaHandler {
           cb = opts;
           opts = {};
         }
-        dns.lookup(hostname, { all: true }, (err, addresses) => {
+        dns.lookup(hostname, { all: true, family: 4 }, (err, addresses) => {
           if (err) return cb(err);
           if (!addresses || addresses.length === 0) return cb(new Error('DNS resolution empty'));
           const safe = addresses.filter(addr => !mediaResolver.isPrivateOrRestrictedHost(addr.address));
@@ -299,7 +287,7 @@ export class MediaHandler {
           if (opts && opts.all) {
             cb(null, safe);
           } else {
-            cb(null, safe[0].address, safe[0].family);
+            cb(null, safe[0].address, 4);
           }
         });
       };
@@ -325,9 +313,10 @@ export class MediaHandler {
         url.toString(),
         {
           agent,
+          family: 4,
           lookup: safeLookup,
           headers: defaultHeaders,
-          timeout: 2500,
+          timeout: 4000,
         },
         async upstreamRes => {
           // Follow redirects internally to eliminate client roundtrips

@@ -45,13 +45,13 @@ export class EnrichmentPipeline {
     const enriched = articles.map(art => this.enrich(art));
 
     // Try resolving real OpenGraph image metadata for articles without image
-    const toResolve = enriched.filter(art => (!art.image_url || art.image_url.includes('unsplash.com')) && art.url && !art.url.startsWith('data:')).slice(0, 16);
+    const toResolve = enriched.filter(art => (!art.image_url || art.image_url.startsWith('/assets/editorial/')) && art.url && !art.url.startsWith('data:')).slice(0, 16);
     if (toResolve.length > 0) {
       try {
         await Promise.race([
           Promise.all(toResolve.map(async art => {
             try {
-              const res = await mediaResolver.resolveMedia(art.url);
+              const res = await mediaResolver.resolveMedia(art.url, art.title);
               if (res?.imageUrl) {
                 art.image_url = res.imageUrl;
                 if (!art.media) art.media = [];
@@ -68,15 +68,21 @@ export class EnrichmentPipeline {
               // Graceful failure
             }
           })),
-          new Promise(resolve => setTimeout(resolve, 3000))
+          new Promise(resolve => setTimeout(resolve, 3500))
         ]);
       } catch {
         // Continue
       }
     }
 
-    // Ensure media array is clean of low quality icons; upgrade to high-res
+    // Ensure media array is clean of low quality icons and fake photos; upgrade to high-res
     for (const art of enriched) {
+      if (art.image_url && art.image_url.startsWith('/assets/editorial/')) {
+        art.image_url = null;
+      }
+      if (art.media) {
+        art.media = art.media.filter(m => !m.url?.startsWith('/assets/editorial/'));
+      }
       sanitizeArticleMedia(art);
     }
 

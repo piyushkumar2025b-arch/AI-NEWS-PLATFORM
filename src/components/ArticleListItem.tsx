@@ -39,6 +39,14 @@ export const ArticleListItem: React.FC<ArticleListItemProps> = React.memo(({
   };
 
   const displayDate = article.published_at || article.seen_at;
+  const isVideo = article.source_type === 'video' || article.media?.some(m => m.type === 'video');
+  const isAudio = article.source_type === 'podcast' || article.media?.some(m => m.type === 'audio');
+  const hasRealMedia = Boolean(
+    isVideo ||
+    isAudio ||
+    (article.image_url && !article.image_url.startsWith('/assets/editorial/')) ||
+    (article.media && article.media.some(m => m.url && !m.url.startsWith('/assets/editorial/')))
+  );
 
   return (
     <article
@@ -87,20 +95,22 @@ export const ArticleListItem: React.FC<ArticleListItemProps> = React.memo(({
 
       {/* Right side: Thumbnail + bookmark */}
       <div className="flex items-center gap-4 shrink-0">
-        <div className="hidden sm:block w-28 h-20 overflow-hidden rounded-xs bg-stone-100">
-          <MediaRenderer
-            media={article.media}
-            fallbackImageUrl={article.image_url}
-            articleUrl={article.url}
-            title={article.title}
-            category={article.category}
-            source={article.source}
-            sourceId={article.source_id}
-            domain={article.domain}
-            aspectRatio="auto"
-            className="w-full h-full object-cover"
-          />
-        </div>
+        {hasRealMedia && (
+          <div className="hidden sm:block w-28 h-20 overflow-hidden rounded-xs bg-stone-100">
+            <MediaRenderer
+              media={article.media}
+              fallbackImageUrl={article.image_url}
+              articleUrl={article.url}
+              title={article.title}
+              category={article.category}
+              source={article.source}
+              sourceId={article.source_id}
+              domain={article.domain}
+              aspectRatio="auto"
+              className="w-full h-full object-cover"
+            />
+          </div>
+        )}
 
         {onToggleBookmark && (
           <button

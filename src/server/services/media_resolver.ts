@@ -125,7 +125,7 @@ export class MediaResolver {
     }
   }
 
-  async resolveMedia(targetUrl: string, maxRedirects: number = 3): Promise<{ imageUrl?: string; ogTitle?: string } | null> {
+  async resolveMedia(targetUrl: string, title?: string, maxRedirects: number = 3): Promise<{ imageUrl?: string; ogTitle?: string } | null> {
     if (!targetUrl || typeof targetUrl !== 'string') return null;
     const cleanUrl = targetUrl.trim();
 
@@ -134,12 +134,20 @@ export class MediaResolver {
       return cached ? { imageUrl: cached } : null;
     }
 
-    // Immediate YouTube video thumbnail extraction
+    // 1. Immediate YouTube video thumbnail extraction
     const ytMatch = cleanUrl.match(/(?:youtube\.com\/(?:watch\?v=|v\/|embed\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/i);
     if (ytMatch) {
       const ytImg = `https://i.ytimg.com/vi/${ytMatch[1]}/hqdefault.jpg`;
       this.cacheResult(cleanUrl, ytImg);
       return { imageUrl: ytImg };
+    }
+
+    // 2. Immediate GitHub repository OpenGraph card extraction
+    const ghMatch = cleanUrl.match(/^https?:\/\/github\.com\/([a-zA-Z0-9._-]+)\/([a-zA-Z0-9._-]+)(?:\/|$)/i);
+    if (ghMatch && !['features', 'topics', 'trending', 'collections', 'events', 'pricing', 'about', 'login', 'signup'].includes(ghMatch[1].toLowerCase())) {
+      const ghImg = `https://opengraph.githubassets.com/1/${ghMatch[1]}/${ghMatch[2]}`;
+      this.cacheResult(cleanUrl, ghImg);
+      return { imageUrl: ghImg };
     }
 
     const isSafe = await this.verifyDnsSafety(cleanUrl);
@@ -148,7 +156,7 @@ export class MediaResolver {
       return null;
     }
 
-    return new Promise(resolve => {
+    const directResult = await new Promise<{ imageUrl?: string; ogTitle?: string } | null>(resolve => {
       try {
         const parsed = new URL(cleanUrl);
         const client = parsed.protocol === 'https:' ? https : http;
@@ -170,16 +178,14 @@ export class MediaResolver {
               req.destroy();
               try {
                 const nextUrl = new URL(res.headers.location, cleanUrl).toString();
-                return resolve(this.resolveMedia(nextUrl, maxRedirects - 1));
+                return resolve(this.resolveMedia(nextUrl, title, maxRedirects - 1));
               } catch {
-                this.cacheResult(cleanUrl, null);
                 return resolve(null);
               }
             }
 
             if (!res.statusCode || res.statusCode < 200 || res.statusCode >= 400) {
               req.destroy();
-              this.cacheResult(cleanUrl, null);
               return resolve(null);
             }
 
@@ -222,42 +228,61 @@ export class MediaResolver {
               if (html.includes('</head>') || html.length > 120000) {
                 resolved = true;
                 req.destroy();
-                this.cacheResult(cleanUrl, null);
                 return resolve(null);
               }
             });
 
             res.on('end', () => {
-              if (!resolved) {
-                this.cacheResult(cleanUrl, null);
-                resolve(null);
-              }
+              if (!resolved) resolve(null);
             });
 
             res.on('error', () => {
-              if (!resolved) {
-                this.cacheResult(cleanUrl, null);
-                resolve(null);
-              }
+              if (!resolved) resolve(null);
             });
           }
         );
 
         req.on('timeout', () => {
           req.destroy();
-          this.cacheResult(cleanUrl, null);
           resolve(null);
         });
 
         req.on('error', () => {
-          this.cacheResult(cleanUrl, null);
           resolve(null);
         });
       } catch {
-        this.cacheResult(cleanUrl, null);
         resolve(null);
       }
     });
+
+    if (directResult?.imageUrl) {
+      this.cacheResult(cleanUrl, directResult.imageUrl);
+      return directResult;
+    }
+
+    // 3. Fallback: Query Bing News Syndication Bridge by title for authentic live publisher media
+    if (title && title.length > 5) {
+      try {
+        const cleanQuery = title.replace(/[^\w\s-]/g, ' ').slice(0, 70).trim();
+        const bingUrl = `https://www.bing.com/news/search?q=${encodeURIComponent(cleanQuery)}&format=rss`;
+        const bingRes = await fetch(bingUrl, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+          signal: AbortSignal.timeout(3500)
+        });
+        const xml = await bingRes.text();
+        const imgMatch = xml.match(/<News:Image>([^<]+)<\/News:Image>/i);
+        if (imgMatch && imgMatch[1]) {
+          let bImg = imgMatch[1].replace(/&amp;/g, '&').trim();
+          if (bImg.startsWith('http://')) bImg = bImg.replace('http://', 'https://');
+          bImg = `${bImg}&w=800&h=450&c=14&rs=1&qlt=90`;
+          this.cacheResult(cleanUrl, bImg);
+          return { imageUrl: bImg };
+        }
+      } catch {}
+    }
+
+    this.cacheResult(cleanUrl, null);
+    return null;
   }
 
   private sanitizeExtractedUrl(rawImg: string, baseUrl: string): string | null {
@@ -274,7 +299,11 @@ export class MediaResolver {
       }
     }
 
-    if (!url.startsWith('http') || isLowQualityMedia(url)) {
+    if (url.startsWith('http://')) {
+      url = url.replace('http://', 'https://');
+    }
+
+    if (!url.startsWith('https://') || isLowQualityMedia(url)) {
       return null;
     }
 

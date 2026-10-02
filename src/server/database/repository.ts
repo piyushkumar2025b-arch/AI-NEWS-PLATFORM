@@ -136,9 +136,9 @@ export class NewsRepository {
               updatedCount++;
             }
 
-            if (art.image_url && isLowQualityMedia(art.image_url)) {
+            if (art.image_url && (isLowQualityMedia(art.image_url) || art.image_url.startsWith('/assets/editorial/'))) {
               art.image_url = null;
-              art.media = (art.media || []).filter((m: any) => !isLowQualityMedia(m.url));
+              art.media = (art.media || []).filter((m: any) => !isLowQualityMedia(m.url) && !m.url?.startsWith('/assets/editorial/'));
             }
 
             this.insertDirect(art);
@@ -379,9 +379,9 @@ export class NewsRepository {
 
   public insertDirect(article: Article) {
     sanitizeArticleMedia(article);
-    if (article.image_url && isLowQualityMedia(article.image_url)) {
+    if (article.image_url && (isLowQualityMedia(article.image_url) || article.image_url.startsWith('/assets/editorial/'))) {
       article.image_url = null;
-      article.media = (article.media || []).filter((m: any) => !isLowQualityMedia(m.url));
+      article.media = (article.media || []).filter((m: any) => !isLowQualityMedia(m.url) && !m.url?.startsWith('/assets/editorial/'));
     }
     this.getTimestamp(article);
     this.articles.set(article.id, article);
@@ -630,7 +630,7 @@ export class NewsRepository {
       const offset = (page - 1) * limit;
       const paginated = feed.slice(offset, offset + limit);
       for (const a of paginated) {
-        if (a.image_url && isLowQualityMedia(a.image_url)) {
+        if (a.image_url && (isLowQualityMedia(a.image_url) || a.image_url.startsWith('/assets/editorial/'))) {
           a.image_url = null;
         }
       }
@@ -769,7 +769,7 @@ export class NewsRepository {
     const offset = (page - 1) * limit;
     const paginated = resultList.slice(offset, offset + limit);
     for (const a of paginated) {
-      if (a.image_url && isLowQualityMedia(a.image_url)) {
+      if (a.image_url && (isLowQualityMedia(a.image_url) || a.image_url.startsWith('/assets/editorial/'))) {
         a.image_url = null;
       }
     }
