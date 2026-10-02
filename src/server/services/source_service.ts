@@ -2,6 +2,7 @@ import { ValidationError } from '../errors/exceptions.js';
 import { mediaResolver } from './media_resolver.js';
 import { newsRepository } from '../database/repository.js';
 import { SOURCES } from '../config/sources.js';
+import { getConnector } from '../connectors/index.js';
 
 export interface CustomSourceInput {
   name: string;
@@ -81,12 +82,22 @@ export class SourceService {
     };
   }
 
+  setSourceEnabled(id: string, enabled: boolean) {
+    const s = (SOURCES as any)[id];
+    if (!s) return null;
+    s.enabled = enabled;
+    newsRepository.setSourceEnabled(id, enabled);
+    const conn = getConnector(id);
+    if (conn && conn.definition) {
+      conn.definition.enabled = enabled;
+    }
+    return s;
+  }
+
   toggleSource(id: string) {
     const s = (SOURCES as any)[id];
     if (!s) return null;
-    s.enabled = !s.enabled;
-    newsRepository.setSourceEnabled(id, s.enabled);
-    return s;
+    return this.setSourceEnabled(id, !s.enabled);
   }
 }
 

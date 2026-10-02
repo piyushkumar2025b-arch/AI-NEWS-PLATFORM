@@ -39,7 +39,30 @@ export class ResilienceHandler {
   }
 
   readinessProbe(_req: Request, res: Response) {
-    res.status(200).json({ status: 'ready', timestamp: new Date().toISOString() });
+    try {
+      const stats = newsRepository.getStats();
+      const isReady = stats.totalSources > 0;
+      if (!isReady) {
+        return res.status(503).json({
+          status: 'not_ready',
+          reason: 'Source repository not initialized',
+          timestamp: new Date().toISOString()
+        });
+      }
+      res.status(200).json({
+        status: 'ready',
+        totalArticles: stats.totalArticles,
+        activeSources: stats.activeSources,
+        healthySources: stats.healthySources,
+        timestamp: new Date().toISOString()
+      });
+    } catch (err: any) {
+      res.status(503).json({
+        status: 'unhealthy',
+        error: err.message,
+        timestamp: new Date().toISOString()
+      });
+    }
   }
 }
 

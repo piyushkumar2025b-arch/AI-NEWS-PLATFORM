@@ -574,7 +574,7 @@ export class NewsRepository {
     query?: string;
     fromDate?: string;
     toDate?: string;
-    sort?: 'latest' | 'oldest' | 'engagement';
+    sort?: 'latest' | 'oldest' | 'engagement' | string;
     page?: number;
     limit?: number;
     maxLimit?: number;
@@ -753,8 +753,8 @@ export class NewsRepository {
       resultList.sort((a, b) => this.getTimestamp(a) - this.getTimestamp(b));
     } else if (options.sort === 'engagement') {
       resultList.sort((a, b) => {
-        const scoreA = (a.metrics?.score || 0) + (a.metrics?.comments || 0) + (a.metrics?.stars || 0);
-        const scoreB = (b.metrics?.score || 0) + (b.metrics?.comments || 0) + (b.metrics?.stars || 0);
+        const scoreA = (a.metrics?.score || 0) + (a.metrics?.comments || 0) + (a.metrics?.stars || 0) + (a.metrics?.views ? Math.log10(a.metrics.views + 1) * 10 : 0) + ((a.metrics?.likes || 0) * 2);
+        const scoreB = (b.metrics?.score || 0) + (b.metrics?.comments || 0) + (b.metrics?.stars || 0) + (b.metrics?.views ? Math.log10(b.metrics.views + 1) * 10 : 0) + ((b.metrics?.likes || 0) * 2);
         if (scoreB !== scoreA) return scoreB - scoreA;
         return this.getTimestamp(b) - this.getTimestamp(a);
       });
@@ -778,7 +778,11 @@ export class NewsRepository {
   }
 
   public recordFetchRun(log: FetchRunLog) {
-    this.fetchRuns.unshift(log);
+    const fullLog: FetchRunLog = {
+      id: log.id || `run_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      ...log
+    };
+    this.fetchRuns.unshift(fullLog);
     if (this.fetchRuns.length > 200) {
       this.fetchRuns.pop();
     }

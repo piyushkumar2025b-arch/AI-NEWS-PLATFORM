@@ -36,13 +36,13 @@ apiRouter.get("/videos/channels", (req, res, next) => videoHandler.getChannels(r
 
 // Sources APIs
 apiRouter.get("/sources", (req, res, next) => sourceHandler.getSources(req, res, next));
-apiRouter.post("/sources", (req, res, next) => sourceHandler.createSource(req, res, next));
+apiRouter.post("/sources", adminAuthMiddleware, (req, res, next) => sourceHandler.createSource(req, res, next));
 apiRouter.get("/sources/:source_id", (req, res, next) => sourceHandler.getSourceById(req, res, next));
-apiRouter.post("/sources/:source_id/toggle", (req, res, next) => sourceHandler.toggleSource(req, res, next));
-apiRouter.post("/sources/:source_id/fetch", (req, res, next) => adminHandler.triggerSourceFetch(req, res, next));
+apiRouter.post("/sources/:source_id/toggle", adminAuthMiddleware, (req, res, next) => sourceHandler.toggleSource(req, res, next));
+apiRouter.post("/sources/:source_id/fetch", adminAuthMiddleware, (req, res, next) => adminHandler.triggerSourceFetch(req, res, next));
 
 // Ingestion APIs
-apiRouter.post("/ingest/all", async (req, res, next) => {
+apiRouter.post("/ingest/all", adminAuthMiddleware, async (req, res, next) => {
   try {
     const op = ingestionWorker.triggerIngestion();
     res.json({
@@ -50,13 +50,13 @@ apiRouter.post("/ingest/all", async (req, res, next) => {
       message: "Triggered asynchronous ingestion cycle for all active connectors",
       operationId: op.operationId,
       status: op.status,
-      request_id: req.requestId
+      request_id: (req as any).requestId
     });
   } catch (err) {
     next(err);
   }
 });
-apiRouter.post("/ingest/source/:source_id", async (req, res, next) => {
+apiRouter.post("/ingest/source/:source_id", adminAuthMiddleware, async (req, res, next) => {
   try {
     const sourceId = req.params.source_id;
     ingestionWorker.runSingleSource(sourceId).catch(() => {});
@@ -65,7 +65,7 @@ apiRouter.post("/ingest/source/:source_id", async (req, res, next) => {
       message: `Triggered ingestion cycle for source '${sourceId}'`,
       sourceId,
       status: "running",
-      request_id: req.requestId
+      request_id: (req as any).requestId
     });
   } catch (err) {
     next(err);
@@ -112,7 +112,7 @@ apiRouter.all("*", (req, res) => {
       code: "RESOURCE_NOT_FOUND",
       message: `API route ${req.method} '${req.originalUrl || req.baseUrl + req.url}' was not found.`
     },
-    request_id: req.requestId
+    request_id: (req as any).requestId
   });
 });
 

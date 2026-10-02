@@ -28,11 +28,15 @@ function decodeHtmlEntities(text) {
 }
 __name(decodeHtmlEntities, "decodeHtmlEntities");
 class GenericAiRssConnector extends BaseConnector {
+  public defaultCategory: string;
+  public defaultPublisher: string;
+  public defaultSourceType: string;
+
   constructor(
-    sourceDef,
-    defaultCategory,
-    defaultPublisher,
-    defaultSourceType = "news",
+    sourceDef: any,
+    defaultCategory: string,
+    defaultPublisher: string,
+    defaultSourceType: string = "news",
   ) {
     super();
     this.protocol = rssProtocol;
@@ -44,7 +48,7 @@ class GenericAiRssConnector extends BaseConnector {
   static {
     __name(this, "GenericAiRssConnector");
   }
-  async fetch(options = {}) {
+  async fetch(options: any = {}) {
     const startTime = Date.now();
     const limit = Math.min(60, options.limit || 30);
     const channelMatch = this.definition.baseUrl.match(
@@ -500,7 +504,7 @@ class NatureAiConnector extends GenericAiRssConnector {
   constructor() {
     super(SOURCES.nature_ai, "research", "Nature", "research");
   }
-  async fetch(options = {}) {
+  async fetch(options: any = {}) {
     try {
       const result = await super.fetch(options);
       if (result.rawItems && result.rawItems.length > 0) {

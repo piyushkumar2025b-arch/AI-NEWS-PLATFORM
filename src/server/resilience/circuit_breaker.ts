@@ -1,7 +1,10 @@
 export class CircuitBreakerOpenError extends Error {
-  constructor(message: string = 'Circuit breaker is open') {
+  public retryAfterMs: number;
+
+  constructor(message: string = 'Circuit breaker is open', retryAfterMs: number = 10000) {
     super(message);
     this.name = 'CircuitBreakerOpenError';
+    this.retryAfterMs = retryAfterMs;
   }
 }
 
@@ -24,6 +27,7 @@ export class CircuitBreaker {
   private failureCount: number = 0;
   private successCount: number = 0;
   private lastFailureTime: number = 0;
+  private inFlightHalfOpen: number = 0;
 
   constructor(options: CircuitBreakerOptions) {
     this.name = options.name;
@@ -38,16 +42,48 @@ export class CircuitBreaker {
       if (elapsed >= this.recoveryTimeoutMs) {
         this.state = 'HALF_OPEN';
         this.successCount = 0;
+        this.inFlightHalfOpen = 0;
       }
     }
     return this.state;
   }
 
-  async execute<T>(fn: () => Promise<T>): Promise<T> {
+  async execute<T>(fn: () => Promise<T>, onError?: (err: unknown) => void): Promise<T> {
     const currentState = this.getState();
 
     if (currentState === 'OPEN') {
-      throw new CircuitBreakerOpenError(`Circuit '${this.name}' is OPEN. Fast-failing request.`);
+      const elapsed = Date.now() - this.lastFailureTime;
+      const retryAfterMs = Math.max(100, this.recoveryTimeoutMs - elapsed);
+      const error = new CircuitBreakerOpenError(
+        `Circuit '${this.name}' is OPEN. Fast-failing request.`,
+        retryAfterMs
+      );
+      if (onError) {
+        try {
+          onError(error);
+        } catch (handledErr) {
+          throw handledErr;
+        }
+      }
+      throw error;
+    }
+
+    if (currentState === 'HALF_OPEN') {
+      if (this.inFlightHalfOpen >= this.halfOpenMaxSuccess) {
+        const error = new CircuitBreakerOpenError(
+          `Circuit '${this.name}' is HALF_OPEN and probe limit reached.`,
+          1000
+        );
+        if (onError) {
+          try {
+            onError(error);
+          } catch (handledErr) {
+            throw handledErr;
+          }
+        }
+        throw error;
+      }
+      this.inFlightHalfOpen++;
     }
 
     try {
@@ -56,7 +92,18 @@ export class CircuitBreaker {
       return result;
     } catch (err) {
       this.onFailure();
+      if (onError) {
+        try {
+          onError(err);
+        } catch (handledErr) {
+          throw handledErr;
+        }
+      }
       throw err;
+    } finally {
+      if (currentState === 'HALF_OPEN') {
+        this.inFlightHalfOpen = Math.max(0, this.inFlightHalfOpen - 1);
+      }
     }
   }
 

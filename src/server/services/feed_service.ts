@@ -1,6 +1,21 @@
 import { newsRepository } from '../database/repository.js';
 import { Article } from '../models/article.js';
 
+function safeCdata(text: string): string {
+  if (!text) return '';
+  return text.replace(/]]>/g, ']]]]><![CDATA[>');
+}
+
+function escapeXml(text: string): string {
+  if (!text) return '';
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
 export class FeedService {
   private sanitizeCsvCell(value: any): string {
     if (value === null || value === undefined) return '""';
@@ -46,13 +61,13 @@ export class FeedService {
     const result = newsRepository.queryArticles({ limit: options.limit || 30 });
     const itemsXml = result.articles.map(art => `
     <item>
-      <title><![CDATA[${art.title}]]></title>
-      <link>${art.canonical_url || art.url}</link>
-      <guid isPermaLink="false">${art.id}</guid>
+      <title><![CDATA[${safeCdata(art.title)}]]></title>
+      <link>${escapeXml(art.canonical_url || art.url)}</link>
+      <guid isPermaLink="false">${escapeXml(art.id)}</guid>
       <pubDate>${art.published_at ? new Date(art.published_at).toUTCString() : new Date().toUTCString()}</pubDate>
-      <description><![CDATA[${art.description || ''}]]></description>
-      <category>${art.category || 'technology'}</category>
-      ${art.author ? `<author>${art.author}</author>` : ''}
+      <description><![CDATA[${safeCdata(art.description || '')}]]></description>
+      <category>${escapeXml(art.category || 'technology')}</category>
+      ${art.author ? `<author>${escapeXml(art.author)}</author>` : ''}
     </item>`).join('');
 
     return `<?xml version="1.0" encoding="UTF-8"?>
@@ -72,12 +87,12 @@ export class FeedService {
     const result = newsRepository.queryArticles({ limit: options.limit || 30 });
     const entriesXml = result.articles.map(art => `
     <entry>
-      <id>${art.id}</id>
-      <title><![CDATA[${art.title}]]></title>
-      <link href="${art.canonical_url || art.url}" />
+      <id>${escapeXml(art.id)}</id>
+      <title><![CDATA[${safeCdata(art.title)}]]></title>
+      <link href="${escapeXml(art.canonical_url || art.url)}" />
       <updated>${art.published_at || new Date().toISOString()}</updated>
-      <summary><![CDATA[${art.description || ''}]]></summary>
-      ${art.author ? `<author><name>${art.author}</name></author>` : ''}
+      <summary><![CDATA[${safeCdata(art.description || '')}]]></summary>
+      ${art.author ? `<author><name>${escapeXml(art.author)}</name></author>` : ''}
     </entry>`).join('');
 
     return `<?xml version="1.0" encoding="UTF-8"?>

@@ -4,6 +4,18 @@
  * real technology topics, labs, datacenters, microchips, robotics, and consumer devices.
  */
 
+export const LOCAL_EDITORIAL_ASSETS = {
+  ai_research: '/assets/editorial/ai_research.jpg',
+  audiotech: '/assets/editorial/audiotech.jpg',
+  biotech: '/assets/editorial/biotech.jpg',
+  cybersecurity: '/assets/editorial/cybersecurity.jpg',
+  datacenter: '/assets/editorial/datacenter.jpg',
+  robotics: '/assets/editorial/robotics.jpg',
+  silicon_chips: '/assets/editorial/silicon_chips.jpg',
+  smart_glasses: '/assets/editorial/smart_glasses.jpg',
+  ukraine_app: '/assets/editorial/cybersecurity.jpg',
+};
+
 export const TOPIC_PHOTOGRAPHY: Record<string, string[]> = {
   smart_glasses_wearables: [
     'https://images.unsplash.com/photo-1593508512255-86ab42a8e620?w=800&auto=format&fit=crop&q=80',

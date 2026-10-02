@@ -1,4 +1,4 @@
-import { SourceDefinition } from '../../shared/types.js';
+import { SourceDefinition } from '../../types.js';
 
 export const ULTRA_SOURCES: Record<string, SourceDefinition> = {
   // === 1. AI SAFETY, ALIGNMENT & GOVERNANCE ===

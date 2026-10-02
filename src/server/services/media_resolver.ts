@@ -165,6 +165,15 @@ export class MediaResolver {
           parsed,
           {
             family: 4, // Explicitly enforce IPv4 to eliminate container IPv6 black-hole stalling
+            lookup: (hostname, _options, callback) => {
+              dns.lookup(hostname, { family: 4, all: false }, (err, address, family) => {
+                if (err) return callback(err, address, family);
+                if (this.isPrivateOrRestrictedHost(address)) {
+                  return callback(new Error(`SSRF blocked host resolution: ${address}`), '', 4);
+                }
+                callback(null, address, family);
+              });
+            },
             headers: {
               'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
               'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',

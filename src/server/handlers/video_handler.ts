@@ -8,12 +8,14 @@ export class VideoHandler {
       const page = parseInt(req.query.page as string, 10) || 1;
       const limit = parseInt(req.query.limit as string, 10) || 20;
       const channel = (req.query.channel as string) || undefined;
-      const query = (req.query.query as string) || undefined;
+      const query = (req.query.search as string) || (req.query.query as string) || (req.query.q as string) || undefined;
+      const sort = (req.query.sort as string) || undefined;
 
       const result = newsRepository.queryArticles({
         sourceType: 'video',
         channel,
         query,
+        sort,
         page,
         limit
       });

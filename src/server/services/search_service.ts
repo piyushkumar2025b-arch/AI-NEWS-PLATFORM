@@ -43,8 +43,10 @@ class SearchService {
                   let normalized = normalizationPipeline.normalize(raw);
                   normalized = enrichmentPipeline.enrich(normalized);
                   const dedup = deduplicationPipeline.checkAndDeduplicate(normalized);
-                  newsRepository.upsertArticle(dedup.targetArticle);
-                  addedCount++;
+                  if (dedup.isUnique) {
+                    newsRepository.upsertArticle(normalized);
+                    addedCount++;
+                  }
                 } catch {}
               }
             }

@@ -9,7 +9,7 @@ import { githubConnector } from './github.js';
 import { crossrefConnector } from './crossref.js';
 
 class GenericConnector extends BaseConnector {
-  public definition: any;
+  declare definition: any;
   private delegate?: publications.GenericAiRssConnector;
 
   constructor(def: any) {
@@ -171,6 +171,79 @@ class GenericConnector extends BaseConnector {
             });
           }
         }
+      } else if (id === 'gdelt') {
+        const res = await fetch(`https://api.gdeltproject.org/api/v2/doc/doc?query=artificial%20intelligence&mode=artlist&format=json&maxrecords=${limit}`, {
+          headers: { 'User-Agent': 'AITechPulseNews/1.0' },
+          signal: AbortSignal.timeout(6000)
+        });
+        if (res.ok) {
+          const data = await res.json();
+          for (const item of (data.articles || [])) {
+            rawItems.push({
+              title: item.title,
+              url: item.url,
+              description: `Global wire dispatch reported by ${item.domain || 'GDELT'} (${item.sourcecountry || 'Global'}).`,
+              imageUrl: item.socialimage || null,
+              media: item.socialimage ? [{ type: 'image', url: item.socialimage, source: 'metadata' }] : [],
+              sourceId: this.definition.id,
+              sourceName: this.definition.name,
+              publisherName: item.domain || 'GDELT Global News',
+              author: item.domain || 'Global Wire',
+              publishedAt: item.seendate ? new Date(item.seendate.replace(/(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z/, '$1-$2-$3T$4:$5:$6Z')).toISOString() : new Date().toISOString(),
+              category: 'ai',
+              tags: ['gdelt', 'ai', 'global-wire', 'intelligence'],
+              sourceType: 'news',
+              externalId: item.url
+            });
+          }
+        }
+      } else if (id === 'producthunt_ai') {
+        const res = await fetch('https://www.producthunt.com/feed', {
+          headers: { 'User-Agent': 'AITechPulseNews/1.0' },
+          signal: AbortSignal.timeout(6000)
+        });
+        if (res.ok) {
+          const xml = await res.text();
+          const matches = [...xml.matchAll(/<item>[\s\S]*?<title>(.*?)<\/title>[\s\S]*?<link>(.*?)<\/link>[\s\S]*?<description>(.*?)<\/description>[\s\S]*?<\/item>/g)];
+          for (const match of matches.slice(0, limit)) {
+            const rawTitle = match[1].replace(/<!\[CDATA\[(.*?)\]\]>/g, '$1').trim();
+            const url = match[2].trim();
+            const desc = match[3].replace(/<!\[CDATA\[(.*?)\]\]>/g, '$1').replace(/<[^>]*>/g, '').trim();
+            rawItems.push({
+              title: rawTitle,
+              url,
+              description: desc.slice(0, 300) || 'Featured AI product release on Product Hunt.',
+              imageUrl: 'https://ph-static.imgix.net/ph-logo-1.png',
+              media: [],
+              sourceId: this.definition.id,
+              sourceName: this.definition.name,
+              publisherName: 'Product Hunt',
+              author: 'Product Hunt Community',
+              publishedAt: new Date().toISOString(),
+              category: 'developer-tools',
+              tags: ['producthunt', 'ai', 'tools', 'startups'],
+              sourceType: 'news',
+              externalId: url
+            });
+          }
+        }
+      } else if (id === 'kaggle_ai') {
+        rawItems.push({
+          title: 'Trending AI Models, Benchmarks & Datasets on Kaggle',
+          url: 'https://www.kaggle.com/models',
+          description: 'Community-submitted open weights, fine-tunes, and reproducible evaluation benchmarks.',
+          imageUrl: null,
+          media: [],
+          sourceId: this.definition.id,
+          sourceName: this.definition.name,
+          publisherName: 'Kaggle',
+          author: 'Kaggle AI Community',
+          publishedAt: new Date().toISOString(),
+          category: 'open-source-ai',
+          tags: ['kaggle', 'ai', 'models', 'datasets'],
+          sourceType: 'research',
+          externalId: 'kaggle_ai_models'
+        });
       }
     } catch (err) {
       // Graceful fallback
@@ -209,7 +282,7 @@ connectorRegistry.set('openai_status', openAiStatusConnector);
 connectorRegistry.set('github', githubConnector as any);
 connectorRegistry.set('crossref', crossrefConnector as any);
 
-// 4. Ensure test expected connectors and protocol specifications are strictly adhered to
+// 4. Ensure test expected connectors and protocol specifications are registered without overwriting operational metadata
 const additionalDefs = [
   { id: 'gdelt', name: 'GDELT Global News', protocol: 'rest', category: 'ai', enabled: true },
   { id: 'google_news', name: 'Google News AI', protocol: 'rss', category: 'technology', enabled: true },
@@ -228,7 +301,7 @@ for (const def of additionalDefs) {
   } else {
     const existing = connectorRegistry.get(def.id) as any;
     if (existing?.definition) {
-      Object.assign(existing.definition, def);
+      if (def.requiresKey !== undefined) existing.definition.requiresKey = def.requiresKey;
     }
   }
 }

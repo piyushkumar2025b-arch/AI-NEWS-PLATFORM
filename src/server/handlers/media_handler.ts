@@ -21,10 +21,21 @@ interface CachedImage {
 
 export class MediaHandler {
   private proxyCache: Map<string, CachedImage> = new Map();
-  private maxCacheEntries = 800;
-  private positiveTtlMs = 1000 * 60 * 60 * 24 * 7; // 7 days in-memory
+  private maxCacheEntries = 250;
+  private currentCacheBytes = 0;
+  private maxCacheBytes = 80 * 1024 * 1024; // Strict 80 MB total memory budget
+  private positiveTtlMs = 1000 * 60 * 60 * 24 * 3; // 3 days in-memory
   private negativeCache: Map<string, number> = new Map();
+  private maxNegativeEntries = 500;
   private negativeTtlMs = 1000 * 30; // 30 seconds for transient failures
+
+  private recordNegative(key: string) {
+    if (this.negativeCache.size >= this.maxNegativeEntries) {
+      const oldest = this.negativeCache.keys().next().value;
+      if (oldest) this.negativeCache.delete(oldest);
+    }
+    this.negativeCache.set(key, Date.now() + this.negativeTtlMs);
+  }
 
   private httpAgent: http.Agent;
   private httpsAgent: https.Agent;
@@ -198,7 +209,7 @@ export class MediaHandler {
       const isSafe = await mediaResolver.verifyDnsSafety(parsed.hostname);
       if (!isSafe) {
         logger.warn(`Media proxy blocked unsafe host via DNS: ${parsed.hostname}`);
-        this.negativeCache.set(cacheKey, Date.now() + this.negativeTtlMs);
+        this.recordNegative(cacheKey);
         if (fallbackTitle) {
           return this.sendFallbackCard(res, fallbackTitle, fallbackCat, fallbackSource, fallbackDomain);
         }
@@ -208,25 +219,39 @@ export class MediaHandler {
       // Tunneling fetch with redirect following, anti-hotlink bypass, and retry
       const result = await this.tunnelFetch(parsed, 5);
       if (!result) {
-        this.negativeCache.set(cacheKey, Date.now() + this.negativeTtlMs);
+        this.recordNegative(cacheKey);
         if (fallbackTitle) {
           return this.sendFallbackCard(res, fallbackTitle, fallbackCat, fallbackSource, fallbackDomain);
         }
         return res.status(404).end();
       }
 
-      // Save to positive cache
+      // Save to positive cache with strict byte limit eviction
       const etag = `"${crypto.createHash('md5').update(result.buffer).digest('hex')}"`;
-      if (this.proxyCache.size >= this.maxCacheEntries) {
-        const oldestKey = this.proxyCache.keys().next().value;
-        if (oldestKey) this.proxyCache.delete(oldestKey);
+      const newItemBytes = result.buffer.length;
+
+      if (newItemBytes <= 5 * 1024 * 1024) {
+        while (
+          this.proxyCache.size > 0 &&
+          (this.currentCacheBytes + newItemBytes > this.maxCacheBytes || this.proxyCache.size >= this.maxCacheEntries)
+        ) {
+          const oldestKey = this.proxyCache.keys().next().value;
+          if (!oldestKey) break;
+          const oldItem = this.proxyCache.get(oldestKey);
+          if (oldItem) {
+            this.currentCacheBytes -= oldItem.buffer.length;
+          }
+          this.proxyCache.delete(oldestKey);
+        }
+
+        this.proxyCache.set(cacheKey, {
+          buffer: result.buffer,
+          contentType: result.contentType,
+          etag,
+          expiresAt: Date.now() + this.positiveTtlMs,
+        });
+        this.currentCacheBytes += newItemBytes;
       }
-      this.proxyCache.set(cacheKey, {
-        buffer: result.buffer,
-        contentType: result.contentType,
-        etag,
-        expiresAt: Date.now() + this.positiveTtlMs,
-      });
 
       const clientEtag = req.headers['if-none-match'];
       if (clientEtag && clientEtag === etag) {

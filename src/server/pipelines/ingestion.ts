@@ -1,5 +1,6 @@
 import { validationPipeline } from './validation.js';
 import { normalizationPipeline } from './normalization.js';
+import { filterPipeline } from './filtering.js';
 import { enrichmentPipeline } from './enrichment.js';
 import { deduplicationPipeline } from './deduplication.js';
 import { newsRepository } from '../database/repository.js';
@@ -42,11 +43,34 @@ export class IngestionOrchestrator {
       if (!valRes.valid) {
         continue;
       }
+
+      if (!filterPipeline.passesFilter(itemWithSource)) {
+        continue;
+      }
       validCount++;
 
       const normalized = normalizationPipeline.normalize(itemWithSource);
       const enriched = enrichmentPipeline.enrich(normalized);
       const dedup = deduplicationPipeline.checkAndDeduplicate(enriched);
+
+      if (!dedup.isUnique) {
+        duplicateCount++;
+        if (dedup.matchedArticleId) {
+          const existing = newsRepository.getArticleById(dedup.matchedArticleId);
+          if (existing) {
+            existing.linked_sources = existing.linked_sources || [];
+            if (!existing.linked_sources.some(s => s.url === enriched.url)) {
+              existing.linked_sources.push({
+                sourceId: enriched.source_id,
+                sourceName: enriched.source,
+                url: enriched.url,
+                publishedAt: enriched.published_at
+              });
+            }
+          }
+        }
+        continue;
+      }
 
       const upsertRes = newsRepository.upsertArticle(enriched);
       if (upsertRes.inserted) {
@@ -59,6 +83,7 @@ export class IngestionOrchestrator {
     const durationMs = Date.now() - startTime;
 
     newsRepository.recordFetchRun({
+      id: `run_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       sourceId,
       sourceName,
       status: 'success',

@@ -47,27 +47,33 @@ const PRIORITY_SOURCE_IDS = new Set([
   'hn_ai'
 ]);
 
-async function fetchFromConnector(connector: any, options: { limit?: number } = { limit: 15 }): Promise<any[]> {
+async function fetchFromConnector(connector: any, options: { limit?: number; signal?: AbortSignal } = { limit: 15 }): Promise<any[]> {
+  const abortController = new AbortController();
+  const connectorOptions = { ...options, signal: abortController.signal };
+
+  // 7-second safeguard timeout per source to prevent hanging sockets with proper cleanup
+  let timer: NodeJS.Timeout | undefined;
+  const timeoutPromise = new Promise<any[]>((_, reject) => {
+    timer = setTimeout(() => {
+      abortController.abort();
+      reject(new Error('Connector fetch timed out after 7s'));
+    }, 7000);
+    timer.unref?.();
+  });
+
   const fetchPromise = (async () => {
     if (typeof connector.fetch === 'function') {
-      const res = await connector.fetch(options);
+      const res = await connector.fetch(connectorOptions);
       if (Array.isArray(res)) return res;
       return res?.rawItems || [];
     }
     if (typeof connector.fetchArticles === 'function') {
-      const res = await connector.fetchArticles(options);
+      const res = await connector.fetchArticles(connectorOptions);
       if (Array.isArray(res)) return res;
       return res?.rawItems || [];
     }
     return [];
   })();
-
-  // 7-second safeguard timeout per source to prevent hanging sockets with proper cleanup
-  let timer: NodeJS.Timeout | undefined;
-  const timeoutPromise = new Promise<any[]>((_, reject) => {
-    timer = setTimeout(() => reject(new Error('Connector fetch timed out after 7s')), 7000);
-    timer.unref?.();
-  });
 
   try {
     return await Promise.race([fetchPromise, timeoutPromise]);
@@ -146,6 +152,7 @@ export class IngestionWorker {
               op.itemsDuplicate += batchRes.duplicates;
             } else {
               newsRepository.recordFetchRun({
+                id: `run_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
                 sourceId,
                 sourceName,
                 status: 'success',
@@ -161,6 +168,7 @@ export class IngestionWorker {
           } catch (err: any) {
             op.failedSources++;
             newsRepository.recordFetchRun({
+              id: `run_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
               sourceId,
               sourceName,
               status: 'failed',
@@ -237,6 +245,7 @@ export class IngestionWorker {
       return result;
     } catch (err: any) {
       newsRepository.recordFetchRun({
+        id: `run_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
         sourceId,
         sourceName: connector.getSourceName(),
         status: 'failed',

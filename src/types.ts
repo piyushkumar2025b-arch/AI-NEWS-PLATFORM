@@ -140,7 +140,10 @@ export interface SourceInfo {
   region?: string;
   country?: string;
   health?: SourceHealth;
+  [key: string]: any;
 }
+
+export type SourceDefinition = SourceInfo;
 
 export interface SystemHealth {
   status?: string;
@@ -177,17 +180,17 @@ export interface SystemHealth {
 }
 
 export interface FetchRunLog {
-  id: string;
+  id?: string;
   sourceId: string;
   sourceName: string;
-  status: 'success' | 'failed';
+  status: 'success' | 'failed' | 'partial';
   startedAt: string;
   completedAt?: string;
   durationMs: number;
   itemsReceived: number;
   itemsInserted: number;
   itemsDuplicate: number;
-  error?: string;
+  error?: string | null;
 }
 
 export interface IngestionOperation {

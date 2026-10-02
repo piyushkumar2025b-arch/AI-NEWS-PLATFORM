@@ -32,7 +32,7 @@ export class AdminHandler {
     if (!s) {
       return res.status(404).json({ success: false, error: { message: 'Source not found' } });
     }
-    newsRepository.setSourceEnabled(sourceId, true);
+    sourceService.setSourceEnabled(sourceId, true);
     res.json({ success: true, message: `Source ${sourceId} enabled`, request_id: (req as any).requestId });
   }
 
@@ -42,7 +42,7 @@ export class AdminHandler {
     if (!s) {
       return res.status(404).json({ success: false, error: { message: 'Source not found' } });
     }
-    newsRepository.setSourceEnabled(sourceId, false);
+    sourceService.setSourceEnabled(sourceId, false);
     res.json({ success: true, message: `Source ${sourceId} disabled`, request_id: (req as any).requestId });
   }
 

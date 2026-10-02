@@ -11,9 +11,14 @@ if (!process.env.NODE_ENV) {
 }
 
 export function requestIdMiddleware(req: Request, res: Response, next: NextFunction) {
-  const reqId = (req.headers['x-request-id'] as string) || `req_${crypto.randomBytes(6).toString('hex')}`;
-  (req as any).requestId = reqId;
-  res.setHeader('X-Request-ID', reqId);
+  const rawClientReqId = req.headers['x-request-id'];
+  const clientReqId = typeof rawClientReqId === 'string' && /^[a-zA-Z0-9_\-\.]{1,64}$/.test(rawClientReqId)
+    ? rawClientReqId
+    : null;
+  const serverReqId = `req_${crypto.randomBytes(6).toString('hex')}`;
+  const finalReqId = clientReqId ? `${serverReqId}_${clientReqId}` : serverReqId;
+  (req as any).requestId = finalReqId;
+  res.setHeader('X-Request-ID', finalReqId);
   next();
 }
 
