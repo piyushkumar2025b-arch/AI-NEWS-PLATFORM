@@ -274,11 +274,13 @@ export class MediaResolver {
       try {
         const cleanQuery = title.replace(/[^\w\s-]/g, ' ').slice(0, 70).trim();
         const bingUrl = `https://www.bing.com/news/search?q=${encodeURIComponent(cleanQuery)}&format=rss`;
-        const bingRes = await fetch(bingUrl, {
+        const { httpClient } = await import('../clients/http_client.js');
+        const bingRes = await httpClient.get(bingUrl, {
           headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-          signal: AbortSignal.timeout(3500)
+          timeoutMs: 3500,
+          sourceId: 'bing_media'
         });
-        const xml = await bingRes.text();
+        const xml = typeof bingRes.data === 'string' ? bingRes.data : JSON.stringify(bingRes.data);
         const imgMatch = xml.match(/<News:Image>([^<]+)<\/News:Image>/i);
         if (imgMatch && imgMatch[1]) {
           let bImg = imgMatch[1].replace(/&amp;/g, '&').trim();
