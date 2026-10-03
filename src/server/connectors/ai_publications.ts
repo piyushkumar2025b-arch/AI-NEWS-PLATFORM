@@ -138,6 +138,7 @@ class GenericAiRssConnector extends BaseConnector {
         url: this.definition.baseUrl,
         timeoutMs: this.definition.timeoutMs,
         maxRetries: this.definition.maxRetries,
+        signal: options.signal,
       });
     } catch (feedErr: any) {
       const isYouTube =

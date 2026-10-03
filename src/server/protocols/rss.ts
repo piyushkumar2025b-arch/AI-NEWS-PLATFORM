@@ -7,11 +7,13 @@ export const rssProtocol = {
     timeoutMs?: number;
     maxRetries?: number;
     headers?: Record<string, string>;
+    signal?: AbortSignal;
   }) {
     return await rssClient.fetchAndParse(options.url, options.sourceId, {
       timeoutMs: options.timeoutMs,
       maxRetries: options.maxRetries,
-      headers: options.headers
+      headers: options.headers,
+      signal: options.signal
     });
   }
 };

@@ -1,5 +1,184 @@
-var __defProp=Object.defineProperty;var __name=(target,value)=>__defProp(target,"name",{value,configurable:true});import dotenv from 'dotenv';
+import dotenv from 'dotenv';
+
 dotenv.config({ path: '.env.local' });
 dotenv.config();
 
-function loadSettings() {const env=process.env;const parseBool=__name((val,defaultVal)=>{if(val===void 0||val==="")return defaultVal;return val.toLowerCase()==="true"||val==="1"},"parseBool");const parseIntSafe=__name((val,defaultVal)=>{if(!val)return defaultVal;const parsed=parseInt(val,10);return isNaN(parsed)?defaultVal:parsed},"parseIntSafe");const corsStr=env.CORS_ORIGINS||"http://localhost:3000,http://localhost:5173";const corsOrigins=corsStr.split(",").map(s=>s.trim()).filter(Boolean);return{port:3e3,host:"0.0.0.0",appUrl:env.APP_URL||"http://localhost:3000",databaseUrl:env.DATABASE_URL||"sqlite:///./data/news.db",redisUrl:env.REDIS_URL||void 0,corsOrigins,requestTimeout:parseIntSafe(env.REQUEST_TIMEOUT,15)*1e3,maxRetries:parseIntSafe(env.MAX_RETRIES,3),backoffBase:parseIntSafe(env.BACKOFF_BASE,1),backoffMax:parseIntSafe(env.BACKOFF_MAX,30),logLevel:env.LOG_LEVEL||"INFO",adminApiKey:env.ADMIN_API_KEY||"",youtubeApiKey:env.YOUTUBE_API_KEY||env.YT_API_KEY||void 0,githubToken:env.GITHUB_TOKEN||void 0,hfToken:env.HF_TOKEN||void 0,guardianApiKey:env.GUARDIAN_API_KEY||void 0,newsapiKey:env.NEWSAPI_KEY||void 0,semanticScholarApiKey:env.SEMANTIC_SCHOLAR_API_KEY||env.S2_API_KEY||void 0,redditClientId:env.REDDIT_CLIENT_ID||void 0,redditClientSecret:env.REDDIT_CLIENT_SECRET||void 0,enableGdelt:parseBool(env.ENABLE_GDELT,true),enableGoogleNews:parseBool(env.ENABLE_GOOGLE_NEWS,true),enableHackernews:parseBool(env.ENABLE_HACKERNEWS,true),enableArxiv:parseBool(env.ENABLE_ARXIV,true),enableGithub:parseBool(env.ENABLE_GITHUB,true),enableHuggingface:parseBool(env.ENABLE_HUGGINGFACE,true),enableDevto:parseBool(env.ENABLE_DEVTO,true),enableLobsters:parseBool(env.ENABLE_LOBSTERS,true),enableReddit:parseBool(env.ENABLE_REDDIT,true),enableSemanticscholar:parseBool(env.ENABLE_SEMANTICSCHOLAR,true),enableCrossref:parseBool(env.ENABLE_CROSSREF,true),enableGuardian:parseBool(env.ENABLE_GUARDIAN,true),enableNewsapi:parseBool(env.ENABLE_NEWSAPI,true),enableHfPapers:parseBool(env.ENABLE_HF_PAPERS,true),enableDeepmind:parseBool(env.ENABLE_DEEPMIND,true),enableOpenai:parseBool(env.ENABLE_OPENAI,true),enableTechcrunchAi:parseBool(env.ENABLE_TECHCRUNCH_AI,true),enableVenturebeatAi:parseBool(env.ENABLE_VENTUREBEAT_AI,true),enableThevergeAi:parseBool(env.ENABLE_THEVERGE_AI,true),enableMitTechReview:parseBool(env.ENABLE_MIT_TECH_REVIEW,true),enableArstechnica:parseBool(env.ENABLE_ARSTECHNICA,true),enableHfBlog:parseBool(env.ENABLE_HF_BLOG,true),enableLastWeekInAi:parseBool(env.ENABLE_LAST_WEEK_IN_AI,true),enableBbcTech:parseBool(env.ENABLE_BBC_TECH,true),enableWired:parseBool(env.ENABLE_WIRED,true),enableEngadget:parseBool(env.ENABLE_ENGADGET,true),enableSiliconangle:parseBool(env.ENABLE_SILICONANGLE,true),enableIeeeSpectrum:parseBool(env.ENABLE_IEEE_SPECTRUM,true),enableTechmeme:parseBool(env.ENABLE_TECHMEME,true),enableTheregister:parseBool(env.ENABLE_THEREGISTER,true),enableGuardianAi:parseBool(env.ENABLE_GUARDIAN_AI,true),enableNvidiaBlog:parseBool(env.ENABLE_NVIDIA_BLOG,true),enableAwsMl:parseBool(env.ENABLE_AWS_ML,true),enableGoogleResearch:parseBool(env.ENABLE_GOOGLE_RESEARCH,true),enableSimonwAi:parseBool(env.ENABLE_SIMONW_AI,true),enableEuronewsNext:parseBool(env.ENABLE_EURONEWS_NEXT,true),enableScmpTech:parseBool(env.ENABLE_SCMP_TECH,true),enableYtTwoMinutePapers:parseBool(env.ENABLE_YT_TWOMINUTEPAPERS,true),enableYtAiExplained:parseBool(env.ENABLE_YT_AIEXPLAINED,true),enableYtMattWolfe:parseBool(env.ENABLE_YT_MATTWOLFE,true),enableYtDeepmind:parseBool(env.ENABLE_YT_DEEPMIND,true),enableYtFireship:parseBool(env.ENABLE_YT_FIRESHIP,true),enablePracticalAi:parseBool(env.ENABLE_PRACTICAL_AI,true),enableTwimlAi:parseBool(env.ENABLE_TWIML_AI,true),enableLexFridman:parseBool(env.ENABLE_LEX_FRIDMAN,true),enableTomsHardware:parseBool(env.ENABLE_TOMS_HARDWARE,true),enableTheHinduTech:parseBool(env.ENABLE_THE_HINDU_TECH,true),enableSiliconRepublic:parseBool(env.ENABLE_SILICON_REPUBLIC,true),enableHackernoonAi:parseBool(env.ENABLE_HACKERNOON_AI,true),enableNatureAi:parseBool(env.ENABLE_NATURE_AI,true),enableMsResearch:parseBool(env.ENABLE_MS_RESEARCH,true),enableStanfordHai:parseBool(env.ENABLE_STANFORD_HAI,true),enableMitAiNews:parseBool(env.ENABLE_MIT_AI_NEWS,true),enableTheGradient:parseBool(env.ENABLE_THE_GRADIENT,true),enableLatentSpace:parseBool(env.ENABLE_LATENT_SPACE,true),enableImportAi:parseBool(env.ENABLE_IMPORT_AI,true),enableInterconnects:parseBool(env.ENABLE_INTERCONNECTS,true),enableSemianalysis:parseBool(env.ENABLE_SEMIANALYSIS,true),enableMarktechpost:parseBool(env.ENABLE_MARKTECHPOST,true),enableKdnuggets:parseBool(env.ENABLE_KDNUGGETS,true),enableMetaAi:parseBool(env.ENABLE_META_AI,true),enableAppleMl:parseBool(env.ENABLE_APPLE_ML,true),enableMarketingAiInstitute:parseBool(env.ENABLE_MARKETING_AI_INSTITUTE,true),enableSearchenginelandAi:parseBool(env.ENABLE_SEARCHENGINELAND_AI,true),enableAdexchanger:parseBool(env.ENABLE_ADEXCHANGER,true),enableSocialMediaExaminer:parseBool(env.ENABLE_SOCIAL_MEDIA_EXAMINER,true),enableWandbFc:parseBool(env.ENABLE_WANDB_FC,true),enableTowardsDataScience:parseBool(env.ENABLE_TOWARDS_DATA_SCIENCE,true),enableAheadOfAi:parseBool(env.ENABLE_AHEAD_OF_AI,true),enableOneUsefulThing:parseBool(env.ENABLE_ONE_USEFUL_THING,true),enableAiSupremacy:parseBool(env.ENABLE_AI_SUPREMACY,true),enableMarcusOnAi:parseBool(env.ENABLE_MARCUS_ON_AI,true),enableAlgorithmicBridge:parseBool(env.ENABLE_ALGORITHMIC_BRIDGE,true),enableGithubAiBlog:parseBool(env.ENABLE_GITHUB_AI_BLOG,true),enableNvidiaDevBlog:parseBool(env.ENABLE_NVIDIA_DEV_BLOG,true),enableWeaviateBlog:parseBool(env.ENABLE_WEAVIATE_BLOG,true),enableTogetherAi:parseBool(env.ENABLE_TOGETHER_AI,true),enableAiBusiness:parseBool(env.ENABLE_AI_BUSINESS,true),enableBairBlog:parseBool(env.ENABLE_BAIR_BLOG,true),enableAiNews:parseBool(env.ENABLE_AI_NEWS,true),enableMlMastery:parseBool(env.ENABLE_ML_MASTERY,true),enableTowardsAi:parseBool(env.ENABLE_TOWARDS_AI,true),enableUnderstandingAi:parseBool(env.ENABLE_UNDERSTANDING_AI,true),enableAnalyticsVidhya:parseBool(env.ENABLE_ANALYTICS_VIDHYA,true),enableTuringInstitute:parseBool(env.ENABLE_TURING_INSTITUTE,true),enableFastcompanyAi:parseBool(env.ENABLE_FASTCOMPANY_AI,true),enableOpenaiOfficial:parseBool(env.ENABLE_OPENAI_OFFICIAL,true),enableAnthropicAi:parseBool(env.ENABLE_ANTHROPIC_AI,true),enableMistralAi:parseBool(env.ENABLE_MISTRAL_AI,true),enableDeepseekAi:parseBool(env.ENABLE_DEEPSEEK_AI,true),enablePerplexityAi:parseBool(env.ENABLE_PERPLEXITY_AI,true),enableCbsTech:parseBool(env.ENABLE_CBS_TECH,true),enableCnbcTech:parseBool(env.ENABLE_CNBC_TECH,true),enableBloombergTech:parseBool(env.ENABLE_BLOOMBERG_TECH,true),enableCnnTech:parseBool(env.ENABLE_CNN_TECH,true),enableYtYannicKilcher:parseBool(env.ENABLE_YT_YANNIC_KILCHER,true),enableYtWesRoth:parseBool(env.ENABLE_YT_WES_ROTH,true),enableReutersTech:parseBool(env.ENABLE_REUTERS_TECH,true),enableFinancialTimes:parseBool(env.ENABLE_FINANCIAL_TIMES,true),enableApNewsTech:parseBool(env.ENABLE_AP_NEWS_TECH,true),enableWsjTech:parseBool(env.ENABLE_WSJ_TECH,true),enableNikkeiAsia:parseBool(env.ENABLE_NIKKEI_ASIA,true),enableDwTech:parseBool(env.ENABLE_DW_TECH,true),enableFrance24Tech:parseBool(env.ENABLE_FRANCE24_TECH,true),enableStraitsTimes:parseBool(env.ENABLE_STRAITS_TIMES,true),enableAlJazeeraTech:parseBool(env.ENABLE_AL_JAZEERA_TECH,true),enableKoreaHerald:parseBool(env.ENABLE_KOREA_HERALD,true),enableRestOfWorld:parseBool(env.ENABLE_REST_OF_WORLD,true),enableSiftedEu:parseBool(env.ENABLE_SIFTED_EU,true),enableAbcAustraliaTech:parseBool(env.ENABLE_ABC_AUSTRALIA_TECH,true),enableTelegraphTech:parseBool(env.ENABLE_TELEGRAPH_TECH,true)}}__name(loadSettings,"loadSettings");const settings=loadSettings();export{loadSettings,settings};
+export interface Settings {
+  port: number;
+  host: string;
+  appUrl: string;
+  databaseUrl: string;
+  redisUrl?: string;
+  corsOrigins: string[];
+  requestTimeout: number;
+  maxRetries: number;
+  backoffBase: number;
+  backoffMax: number;
+  logLevel: string;
+  adminApiKey: string;
+  youtubeApiKey?: string;
+  githubToken?: string;
+  hfToken?: string;
+  guardianApiKey?: string;
+  newsapiKey?: string;
+  semanticScholarApiKey?: string;
+  redditClientId?: string;
+  redditClientSecret?: string;
+  [key: string]: any;
+}
+
+export function loadSettings(): Settings {
+  const env = process.env;
+
+  const parseBool = (val: string | undefined, defaultVal: boolean): boolean => {
+    if (val === undefined || val === '') return defaultVal;
+    return val.toLowerCase() === 'true' || val === '1';
+  };
+
+  const parseIntSafe = (val: string | undefined, defaultVal: number): number => {
+    if (!val) return defaultVal;
+    const parsed = parseInt(val, 10);
+    return isNaN(parsed) ? defaultVal : parsed;
+  };
+
+  const corsStr = env.CORS_ORIGINS || 'http://localhost:3000,http://localhost:5173';
+  const corsOrigins = corsStr.split(',').map(s => s.trim()).filter(Boolean);
+
+  return {
+    port: parseIntSafe(env.PORT, 3000),
+    host: env.HOST || '0.0.0.0',
+    appUrl: env.APP_URL || 'http://localhost:3000',
+    databaseUrl: env.DATABASE_URL || 'file:./data/news_store.json',
+    redisUrl: env.REDIS_URL || undefined,
+    corsOrigins,
+    requestTimeout: parseIntSafe(env.REQUEST_TIMEOUT, 15) * 1000,
+    maxRetries: parseIntSafe(env.MAX_RETRIES, 3),
+    backoffBase: parseIntSafe(env.BACKOFF_BASE, 1),
+    backoffMax: parseIntSafe(env.BACKOFF_MAX, 30),
+    logLevel: env.LOG_LEVEL || 'INFO',
+    adminApiKey: env.ADMIN_API_KEY || '',
+    youtubeApiKey: env.YOUTUBE_API_KEY || env.YT_API_KEY || undefined,
+    githubToken: env.GITHUB_TOKEN || undefined,
+    hfToken: env.HF_TOKEN || undefined,
+    guardianApiKey: env.GUARDIAN_API_KEY || undefined,
+    newsapiKey: env.NEWSAPI_KEY || undefined,
+    semanticScholarApiKey: env.SEMANTIC_SCHOLAR_API_KEY || env.S2_API_KEY || undefined,
+    redditClientId: env.REDDIT_CLIENT_ID || undefined,
+    redditClientSecret: env.REDDIT_CLIENT_SECRET || undefined,
+
+    // Source switches
+    enableGdelt: parseBool(env.ENABLE_GDELT, true),
+    enableGoogleNews: parseBool(env.ENABLE_GOOGLE_NEWS, true),
+    enableHackernews: parseBool(env.ENABLE_HACKERNEWS, true),
+    enableArxiv: parseBool(env.ENABLE_ARXIV, true),
+    enableGithub: parseBool(env.ENABLE_GITHUB, true),
+    enableHuggingface: parseBool(env.ENABLE_HUGGINGFACE, true),
+    enableDevto: parseBool(env.ENABLE_DEVTO, true),
+    enableLobsters: parseBool(env.ENABLE_LOBSTERS, true),
+    enableReddit: parseBool(env.ENABLE_REDDIT, true),
+    enableSemanticscholar: parseBool(env.ENABLE_SEMANTICSCHOLAR, true),
+    enableCrossref: parseBool(env.ENABLE_CROSSREF, true),
+    enableGuardian: parseBool(env.ENABLE_GUARDIAN, true),
+    enableNewsapi: parseBool(env.ENABLE_NEWSAPI, true),
+    enableHfPapers: parseBool(env.ENABLE_HF_PAPERS, true),
+    enableDeepmind: parseBool(env.ENABLE_DEEPMIND, true),
+    enableOpenai: parseBool(env.ENABLE_OPENAI, true),
+    enableTechcrunchAi: parseBool(env.ENABLE_TECHCRUNCH_AI, true),
+    enableVenturebeatAi: parseBool(env.ENABLE_VENTUREBEAT_AI, true),
+    enableThevergeAi: parseBool(env.ENABLE_THEVERGE_AI, true),
+    enableMitTechReview: parseBool(env.ENABLE_MIT_TECH_REVIEW, true),
+    enableArstechnica: parseBool(env.ENABLE_ARSTECHNICA, true),
+    enableHfBlog: parseBool(env.ENABLE_HF_BLOG, true),
+    enableLastWeekInAi: parseBool(env.ENABLE_LAST_WEEK_IN_AI, true),
+    enableBbcTech: parseBool(env.ENABLE_BBC_TECH, true),
+    enableWired: parseBool(env.ENABLE_WIRED, true),
+    enableEngadget: parseBool(env.ENABLE_ENGADGET, true),
+    enableSiliconangle: parseBool(env.ENABLE_SILICONANGLE, true),
+    enableIeeeSpectrum: parseBool(env.ENABLE_IEEE_SPECTRUM, true),
+    enableTechmeme: parseBool(env.ENABLE_TECHMEME, true),
+    enableTheregister: parseBool(env.ENABLE_THEREGISTER, true),
+    enableGuardianAi: parseBool(env.ENABLE_GUARDIAN_AI, true),
+    enableNvidiaBlog: parseBool(env.ENABLE_NVIDIA_BLOG, true),
+    enableAwsMl: parseBool(env.ENABLE_AWS_ML, true),
+    enableGoogleResearch: parseBool(env.ENABLE_GOOGLE_RESEARCH, true),
+    enableSimonwAi: parseBool(env.ENABLE_SIMONW_AI, true),
+    enableEuronewsNext: parseBool(env.ENABLE_EURONEWS_NEXT, true),
+    enableScmpTech: parseBool(env.ENABLE_SCMP_TECH, true),
+    enableYtTwoMinutePapers: parseBool(env.ENABLE_YT_TWOMINUTEPAPERS, true),
+    enableYtAiExplained: parseBool(env.ENABLE_YT_AIEXPLAINED, true),
+    enableYtMattWolfe: parseBool(env.ENABLE_YT_MATTWOLFE, true),
+    enableYtDeepmind: parseBool(env.ENABLE_YT_DEEPMIND, true),
+    enableYtFireship: parseBool(env.ENABLE_YT_FIRESHIP, true),
+    enablePracticalAi: parseBool(env.ENABLE_PRACTICAL_AI, true),
+    enableTwimlAi: parseBool(env.ENABLE_TWIML_AI, true),
+    enableLexFridman: parseBool(env.ENABLE_LEX_FRIDMAN, true),
+    enableTomsHardware: parseBool(env.ENABLE_TOMS_HARDWARE, true),
+    enableTheHinduTech: parseBool(env.ENABLE_THE_HINDU_TECH, true),
+    enableSiliconRepublic: parseBool(env.ENABLE_SILICON_REPUBLIC, true),
+    enableHackernoonAi: parseBool(env.ENABLE_HACKERNOON_AI, true),
+    enableNatureAi: parseBool(env.ENABLE_NATURE_AI, true),
+    enableMsResearch: parseBool(env.ENABLE_MS_RESEARCH, true),
+    enableStanfordHai: parseBool(env.ENABLE_STANFORD_HAI, true),
+    enableMitAiNews: parseBool(env.ENABLE_MIT_AI_NEWS, true),
+    enableTheGradient: parseBool(env.ENABLE_THE_GRADIENT, true),
+    enableLatentSpace: parseBool(env.ENABLE_LATENT_SPACE, true),
+    enableImportAi: parseBool(env.ENABLE_IMPORT_AI, true),
+    enableInterconnects: parseBool(env.ENABLE_INTERCONNECTS, true),
+    enableSemianalysis: parseBool(env.ENABLE_SEMIANALYSIS, true),
+    enableMarktechpost: parseBool(env.ENABLE_MARKTECHPOST, true),
+    enableKdnuggets: parseBool(env.ENABLE_KDNUGGETS, true),
+    enableMetaAi: parseBool(env.ENABLE_META_AI, true),
+    enableAppleMl: parseBool(env.ENABLE_APPLE_ML, true),
+    enableMarketingAiInstitute: parseBool(env.ENABLE_MARKETING_AI_INSTITUTE, true),
+    enableSearchenginelandAi: parseBool(env.ENABLE_SEARCHENGINELAND_AI, true),
+    enableAdexchanger: parseBool(env.ENABLE_ADEXCHANGER, true),
+    enableSocialMediaExaminer: parseBool(env.ENABLE_SOCIAL_MEDIA_EXAMINER, true),
+    enableWandbFc: parseBool(env.ENABLE_WANDB_FC, true),
+    enableTowardsDataScience: parseBool(env.ENABLE_TOWARDS_DATA_SCIENCE, true),
+    enableAheadOfAi: parseBool(env.ENABLE_AHEAD_OF_AI, true),
+    enableOneUsefulThing: parseBool(env.ENABLE_ONE_USEFUL_THING, true),
+    enableAiSupremacy: parseBool(env.ENABLE_AI_SUPREMACY, true),
+    enableMarcusOnAi: parseBool(env.ENABLE_MARCUS_ON_AI, true),
+    enableAlgorithmicBridge: parseBool(env.ENABLE_ALGORITHMIC_BRIDGE, true),
+    enableGithubAiBlog: parseBool(env.ENABLE_GITHUB_AI_BLOG, true),
+    enableNvidiaDevBlog: parseBool(env.ENABLE_NVIDIA_DEV_BLOG, true),
+    enableWeaviateBlog: parseBool(env.ENABLE_WEAVIATE_BLOG, true),
+    enableTogetherAi: parseBool(env.ENABLE_TOGETHER_AI, true),
+    enableAiBusiness: parseBool(env.ENABLE_AI_BUSINESS, true),
+    enableBairBlog: parseBool(env.ENABLE_BAIR_BLOG, true),
+    enableAiNews: parseBool(env.ENABLE_AI_NEWS, true),
+    enableMlMastery: parseBool(env.ENABLE_ML_MASTERY, true),
+    enableTowardsAi: parseBool(env.ENABLE_TOWARDS_AI, true),
+    enableUnderstandingAi: parseBool(env.ENABLE_UNDERSTANDING_AI, true),
+    enableAnalyticsVidhya: parseBool(env.ENABLE_ANALYTICS_VIDHYA, true),
+    enableTuringInstitute: parseBool(env.ENABLE_TURING_INSTITUTE, true),
+    enableFastcompanyAi: parseBool(env.ENABLE_FASTCOMPANY_AI, true),
+    enableOpenaiOfficial: parseBool(env.ENABLE_OPENAI_OFFICIAL, true),
+    enableAnthropicAi: parseBool(env.ENABLE_ANTHROPIC_AI, true),
+    enableMistralAi: parseBool(env.ENABLE_MISTRAL_AI, true),
+    enableDeepseekAi: parseBool(env.ENABLE_DEEPSEEK_AI, true),
+    enablePerplexityAi: parseBool(env.ENABLE_PERPLEXITY_AI, true),
+    enableCbsTech: parseBool(env.ENABLE_CBS_TECH, true),
+    enableCnbcTech: parseBool(env.ENABLE_CNBC_TECH, true),
+    enableBloombergTech: parseBool(env.ENABLE_BLOOMBERG_TECH, true),
+    enableCnnTech: parseBool(env.ENABLE_CNN_TECH, true),
+    enableYtYannicKilcher: parseBool(env.ENABLE_YT_YANNIC_KILCHER, true),
+    enableYtWesRoth: parseBool(env.ENABLE_YT_WES_ROTH, true),
+    enableReutersTech: parseBool(env.ENABLE_REUTERS_TECH, true),
+    enableFinancialTimes: parseBool(env.ENABLE_FINANCIAL_TIMES, true),
+    enableApNewsTech: parseBool(env.ENABLE_AP_NEWS_TECH, true),
+    enableWsjTech: parseBool(env.ENABLE_WSJ_TECH, true),
+    enableNikkeiAsia: parseBool(env.ENABLE_NIKKEI_ASIA, true),
+    enableDwTech: parseBool(env.ENABLE_DW_TECH, true),
+    enableFrance24Tech: parseBool(env.ENABLE_FRANCE24_TECH, true),
+    enableStraitsTimes: parseBool(env.ENABLE_STRAITS_TIMES, true),
+    enableAlJazeeraTech: parseBool(env.ENABLE_AL_JAZEERA_TECH, true),
+    enableKoreaHerald: parseBool(env.ENABLE_KOREA_HERALD, true),
+    enableRestOfWorld: parseBool(env.ENABLE_REST_OF_WORLD, true),
+    enableSiftedEu: parseBool(env.ENABLE_SIFTED_EU, true),
+    enableAbcAustraliaTech: parseBool(env.ENABLE_ABC_AUSTRALIA_TECH, true),
+    enableTelegraphTech: parseBool(env.ENABLE_TELEGRAPH_TECH, true)
+  };
+}
+
+export const settings = loadSettings();

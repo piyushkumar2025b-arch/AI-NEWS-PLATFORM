@@ -71,7 +71,7 @@ apiRouter.post("/ingest/source/:source_id", adminAuthMiddleware, async (req, res
     next(err);
   }
 });
-apiRouter.get("/ingest/status/:operation_id?", (req, res) => {
+apiRouter.get("/ingest/status/:operation_id?", adminAuthMiddleware, (req, res) => {
   const opId = req.params.operation_id;
   const op = opId ? ingestionWorker.getOperation(opId) : ingestionWorker.getLatestOperation();
   if (!op) {
@@ -87,13 +87,13 @@ apiRouter.get("/feed/json", (req, res, next) => feedHandler.getJsonFeed(req, res
 apiRouter.get("/export/csv", (req, res, next) => feedHandler.exportCsv(req, res, next));
 
 // Metrics and Health APIs
-apiRouter.get("/metrics", (req, res) => resilienceHandler.getMetrics(req, res));
 apiRouter.get("/health", (req, res, next) => healthHandler.getHealth(req, res, next));
-apiRouter.get("/health/sources", (req, res, next) => healthHandler.getSourceHealth(req, res, next));
-apiRouter.get("/health/resilience", (req, res) => resilienceHandler.getCircuitBreakers(req, res));
 apiRouter.get("/health/liveness", (req, res) => resilienceHandler.livenessProbe(req, res));
 apiRouter.get("/health/readiness", (req, res) => resilienceHandler.readinessProbe(req, res));
-apiRouter.get("/fetch-runs", (req, res, next) => adminHandler.getFetchRuns(req, res, next));
+apiRouter.get("/metrics", adminAuthMiddleware, (req, res) => resilienceHandler.getMetrics(req, res));
+apiRouter.get("/health/sources", adminAuthMiddleware, (req, res, next) => healthHandler.getSourceHealth(req, res, next));
+apiRouter.get("/health/resilience", adminAuthMiddleware, (req, res) => resilienceHandler.getCircuitBreakers(req, res));
+apiRouter.get("/fetch-runs", adminAuthMiddleware, (req, res, next) => adminHandler.getFetchRuns(req, res, next));
 
 // Admin APIs
 apiRouter.post("/admin/circuits/:name/reset", adminAuthMiddleware, (req, res) => resilienceHandler.resetCircuit(req, res));

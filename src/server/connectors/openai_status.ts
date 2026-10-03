@@ -1,4 +1,5 @@
 import { BaseConnector } from './base.js';
+import { httpClient } from '../clients/http_client.js';
 
 export class OpenAiStatusConnector extends BaseConnector {
   public definition = {
@@ -17,14 +18,15 @@ export class OpenAiStatusConnector extends BaseConnector {
     const rawItems: any[] = [];
 
     try {
-      const res = await fetch('https://status.openai.com/api/v2/incidents.json', {
-        headers: { 'User-Agent': 'AITechPulseNews/1.0' },
-        signal: AbortSignal.timeout(8000)
+      const res = await httpClient.get('https://status.openai.com/api/v2/incidents.json', {
+        sourceId: this.definition.id,
+        timeoutMs: 8000,
+        signal: options.signal
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        for (const inc of (data.incidents || []).slice(0, 15)) {
+      const data = res.data;
+      if (data && Array.isArray(data.incidents)) {
+        for (const inc of data.incidents.slice(0, 15)) {
           const latestUpdate = inc.incident_updates?.[0];
           const updateBody = latestUpdate ? ` (${latestUpdate.status}): ${latestUpdate.body}` : '';
           rawItems.push({
@@ -69,4 +71,3 @@ export class OpenAiStatusConnector extends BaseConnector {
 }
 
 export const openAiStatusConnector = new OpenAiStatusConnector();
-

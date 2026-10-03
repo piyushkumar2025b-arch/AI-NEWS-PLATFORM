@@ -1,5 +1,6 @@
 import { BaseConnector } from './base.js';
 import { SOURCES } from '../config/sources.js';
+import { httpClient } from '../clients/http_client.js';
 import * as publications from './ai_publications.js';
 import { arxivConnector } from './arxiv.js';
 import { arxivNlpConnector, arxivCvConnector } from './arxiv_specialized.js';
@@ -59,13 +60,14 @@ class GenericConnector extends BaseConnector {
       if (id === 'hackernews') {
         return await hnAiConnector.fetch(options);
       } else if (id === 'devto') {
-        const res = await fetch(`https://dev.to/api/articles?tag=ai&per_page=${limit}`, {
-          headers: { 'User-Agent': 'AITechPulseNews/1.0' },
-          signal: AbortSignal.timeout(6000)
+        const res = await httpClient.get(`https://dev.to/api/articles?tag=ai&per_page=${limit}`, {
+          sourceId: this.definition.id,
+          timeoutMs: 6000,
+          signal: options.signal
         });
-        if (res.ok) {
-          const data = await res.json();
-          for (const item of (Array.isArray(data) ? data : [])) {
+        const data = res.data;
+        if (Array.isArray(data)) {
+          for (const item of data) {
             rawItems.push({
               title: item.title,
               url: item.url,
@@ -86,13 +88,14 @@ class GenericConnector extends BaseConnector {
           }
         }
       } else if (id === 'lobsters') {
-        const res = await fetch('https://lobste.rs/hottest.json', {
-          headers: { 'User-Agent': 'AITechPulseNews/1.0' },
-          signal: AbortSignal.timeout(6000)
+        const res = await httpClient.get('https://lobste.rs/hottest.json', {
+          sourceId: this.definition.id,
+          timeoutMs: 6000,
+          signal: options.signal
         });
-        if (res.ok) {
-          const data = await res.json();
-          for (const item of (Array.isArray(data) ? data.slice(0, limit) : [])) {
+        const data = res.data;
+        if (Array.isArray(data)) {
+          for (const item of data.slice(0, limit)) {
             rawItems.push({
               title: item.title,
               url: item.url || item.comments_url,
@@ -113,13 +116,14 @@ class GenericConnector extends BaseConnector {
           }
         }
       } else if (id === 'hf_papers' || id === 'huggingface') {
-        const res = await fetch('https://huggingface.co/api/daily_papers', {
-          headers: { 'User-Agent': 'AITechPulseNews/1.0' },
-          signal: AbortSignal.timeout(6000)
+        const res = await httpClient.get('https://huggingface.co/api/daily_papers', {
+          sourceId: this.definition.id,
+          timeoutMs: 6000,
+          signal: options.signal
         });
-        if (res.ok) {
-          const data = await res.json();
-          for (const entry of (Array.isArray(data) ? data.slice(0, limit) : [])) {
+        const data = res.data;
+        if (Array.isArray(data)) {
+          for (const entry of data.slice(0, limit)) {
             const paper = entry.paper || entry;
             const paperId = paper.id || entry.id;
             const title = paper.title || entry.title;
@@ -144,13 +148,14 @@ class GenericConnector extends BaseConnector {
           }
         }
       } else if (id === 'semantic_scholar') {
-        const res = await fetch(`https://api.openalex.org/works?search=artificial+intelligence&per_page=${limit}&sort=publication_date:desc`, {
-          headers: { 'User-Agent': 'AITechPulseNews/1.0' },
-          signal: AbortSignal.timeout(6000)
+        const res = await httpClient.get(`https://api.openalex.org/works?search=artificial+intelligence&per_page=${limit}&sort=publication_date:desc`, {
+          sourceId: this.definition.id,
+          timeoutMs: 6000,
+          signal: options.signal
         });
-        if (res.ok) {
-          const data = await res.json();
-          for (const item of (data.results || [])) {
+        const data = res.data;
+        if (data && Array.isArray(data.results)) {
+          for (const item of data.results) {
             const authors = (item.authorships || []).map((a: any) => a.author?.display_name).filter(Boolean).slice(0, 3).join(', ');
             rawItems.push({
               title: item.title,
@@ -172,13 +177,14 @@ class GenericConnector extends BaseConnector {
           }
         }
       } else if (id === 'gdelt') {
-        const res = await fetch(`https://api.gdeltproject.org/api/v2/doc/doc?query=artificial%20intelligence&mode=artlist&format=json&maxrecords=${limit}`, {
-          headers: { 'User-Agent': 'AITechPulseNews/1.0' },
-          signal: AbortSignal.timeout(6000)
+        const res = await httpClient.get(`https://api.gdeltproject.org/api/v2/doc/doc?query=artificial%20intelligence&mode=artlist&format=json&maxrecords=${limit}`, {
+          sourceId: this.definition.id,
+          timeoutMs: 6000,
+          signal: options.signal
         });
-        if (res.ok) {
-          const data = await res.json();
-          for (const item of (data.articles || [])) {
+        const data = res.data;
+        if (data && Array.isArray(data.articles)) {
+          for (const item of data.articles) {
             rawItems.push({
               title: item.title,
               url: item.url,
@@ -198,34 +204,33 @@ class GenericConnector extends BaseConnector {
           }
         }
       } else if (id === 'producthunt_ai') {
-        const res = await fetch('https://www.producthunt.com/feed', {
-          headers: { 'User-Agent': 'AITechPulseNews/1.0' },
-          signal: AbortSignal.timeout(6000)
+        const res = await httpClient.get('https://www.producthunt.com/feed', {
+          sourceId: this.definition.id,
+          timeoutMs: 6000,
+          signal: options.signal
         });
-        if (res.ok) {
-          const xml = await res.text();
-          const matches = [...xml.matchAll(/<item>[\s\S]*?<title>(.*?)<\/title>[\s\S]*?<link>(.*?)<\/link>[\s\S]*?<description>(.*?)<\/description>[\s\S]*?<\/item>/g)];
-          for (const match of matches.slice(0, limit)) {
-            const rawTitle = match[1].replace(/<!\[CDATA\[(.*?)\]\]>/g, '$1').trim();
-            const url = match[2].trim();
-            const desc = match[3].replace(/<!\[CDATA\[(.*?)\]\]>/g, '$1').replace(/<[^>]*>/g, '').trim();
-            rawItems.push({
-              title: rawTitle,
-              url,
-              description: desc.slice(0, 300) || 'Featured AI product release on Product Hunt.',
-              imageUrl: 'https://ph-static.imgix.net/ph-logo-1.png',
-              media: [],
-              sourceId: this.definition.id,
-              sourceName: this.definition.name,
-              publisherName: 'Product Hunt',
-              author: 'Product Hunt Community',
-              publishedAt: new Date().toISOString(),
-              category: 'developer-tools',
-              tags: ['producthunt', 'ai', 'tools', 'startups'],
-              sourceType: 'news',
-              externalId: url
-            });
-          }
+        const xml = typeof res.data === 'string' ? res.data : JSON.stringify(res.data);
+        const matches = [...xml.matchAll(/<item>[\s\S]*?<title>(.*?)<\/title>[\s\S]*?<link>(.*?)<\/link>[\s\S]*?<description>(.*?)<\/description>[\s\S]*?<\/item>/g)];
+        for (const match of matches.slice(0, limit)) {
+          const rawTitle = match[1].replace(/<!\[CDATA\[(.*?)\]\]>/g, '$1').trim();
+          const url = match[2].trim();
+          const desc = match[3].replace(/<!\[CDATA\[(.*?)\]\]>/g, '$1').replace(/<[^>]*>/g, '').trim();
+          rawItems.push({
+            title: rawTitle,
+            url,
+            description: desc.slice(0, 300) || 'Featured AI product release on Product Hunt.',
+            imageUrl: 'https://ph-static.imgix.net/ph-logo-1.png',
+            media: [],
+            sourceId: this.definition.id,
+            sourceName: this.definition.name,
+            publisherName: 'Product Hunt',
+            author: 'Product Hunt Community',
+            publishedAt: new Date().toISOString(),
+            category: 'developer-tools',
+            tags: ['producthunt', 'ai', 'tools', 'startups'],
+            sourceType: 'news',
+            externalId: url
+          });
         }
       } else if (id === 'kaggle_ai') {
         rawItems.push({

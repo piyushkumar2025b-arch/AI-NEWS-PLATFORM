@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { SOURCES } from '../config/sources.js';
+import { settings } from '../config/settings.js';
 import { Logger } from '../config/logging.js';
 import { generateTitleFingerprint } from '../utils/hashing.js';
 import { cleanTitle, calculateStringSimilarity } from '../utils/text.js';
@@ -29,10 +30,18 @@ export class NewsRepository {
   private saveDebounceTimer: NodeJS.Timeout | null = null;
   private fetchRuns: FetchRunLog[] = [];
   private sourceHealthMap: Map<string, SourceHealth> = new Map();
+  private customSources: any[] = [];
+  private sourceOverrides: Map<string, boolean> = new Map();
+  private queryLatencies: number[] = [];
   private dbPath: string;
 
   constructor() {
-    this.dbPath = path.resolve(process.cwd(), 'data', 'news_store.json');
+    if (settings.databaseUrl && (settings.databaseUrl.startsWith('file:') || settings.databaseUrl.endsWith('.json'))) {
+      const filePath = settings.databaseUrl.replace(/^file:\/\//, '').replace(/^file:/, '');
+      this.dbPath = path.resolve(process.cwd(), filePath);
+    } else {
+      this.dbPath = path.resolve(process.cwd(), 'data', 'news_store.json');
+    }
     this.initSourceHealth();
     this.loadFromDisk();
   }
@@ -46,21 +55,19 @@ export class NewsRepository {
 
   private initSourceHealth() {
     for (const s of Object.values(SOURCES)) {
-      // Calibrate realistic baseline latency based on source protocol, network tier, and edge location
-      const baseLatency = s.protocol === 'rest' ? 35 : s.protocol === 'atom' ? 62 : 44;
-      const hash = s.id.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
-      const initialLatency = baseLatency + (hash % 35);
+      const isEnabled = this.sourceOverrides.has(s.id) ? this.sourceOverrides.get(s.id)! : s.enabled;
+      s.enabled = isEnabled;
 
       this.sourceHealthMap.set(s.id, {
         sourceId: s.id,
         sourceName: s.name,
-        status: s.requiresKey && !s.enabled ? 'config_required' : s.enabled ? 'healthy' : 'disabled',
-        enabled: s.enabled,
+        status: s.requiresKey && !isEnabled ? 'config_required' : isEnabled ? 'healthy' : 'disabled',
+        enabled: isEnabled,
         lastSuccess: null,
         lastFailure: null,
         lastFetch: null,
         lastError: null,
-        lastDurationMs: initialLatency,
+        lastDurationMs: null,
         itemsReceivedTotal: 0,
         itemsInsertedTotal: 0,
         itemsDuplicateTotal: 0,
@@ -69,8 +76,8 @@ export class NewsRepository {
         totalFetches: 0,
         totalSuccesses: 0,
         totalArticlesFetched: 0,
-        avgLatencyMs: initialLatency,
-        averageResponseTimeMs: initialLatency
+        avgLatencyMs: null,
+        averageResponseTimeMs: null
       });
     }
   }
@@ -192,6 +199,32 @@ export class NewsRepository {
             this.fetchRuns = parsed.fetchRuns;
           }
 
+          // Restore custom sources definitions
+          if (Array.isArray(parsed.customSources)) {
+            this.customSources = parsed.customSources;
+            for (const cs of parsed.customSources) {
+              if (cs && cs.id) {
+                (SOURCES as any)[cs.id] = cs;
+                this.registerSource(cs);
+              }
+            }
+          }
+
+          // Restore source enable/disable overrides
+          if (parsed.sourceOverrides && typeof parsed.sourceOverrides === 'object') {
+            for (const [id, enabled] of Object.entries(parsed.sourceOverrides)) {
+              this.sourceOverrides.set(id, Boolean(enabled));
+              if ((SOURCES as any)[id]) {
+                (SOURCES as any)[id].enabled = Boolean(enabled);
+              }
+              const h = this.sourceHealthMap.get(id);
+              if (h) {
+                h.enabled = Boolean(enabled);
+                h.status = enabled ? (h.lastError ? 'degraded' : 'healthy') : 'disabled';
+              }
+            }
+          }
+
           logger.info(`Loaded ${this.articles.size} authentic API articles from disk storage`);
           if (updatedCount > 0) {
             this.scheduleSave(3000);
@@ -214,7 +247,9 @@ export class NewsRepository {
         count: this.articles.size,
         articles: Array.from(this.articles.values()),
         sourceHealth: Array.from(this.sourceHealthMap.values()),
-        fetchRuns: this.fetchRuns.slice(0, 100)
+        fetchRuns: this.fetchRuns.slice(0, 100),
+        customSources: this.customSources,
+        sourceOverrides: Object.fromEntries(this.sourceOverrides.entries())
       };
       const tempPath = `${this.dbPath}.tmp`;
       fs.writeFileSync(tempPath, JSON.stringify(data), 'utf-8');
@@ -581,6 +616,14 @@ export class NewsRepository {
     includeSeed?: boolean;
     ids?: string[];
   } = {}): { articles: Article[]; total: number } {
+    const t0 = performance.now();
+    const finish = (result: { articles: Article[]; total: number }) => {
+      const dur = performance.now() - t0;
+      this.queryLatencies.push(dur);
+      if (this.queryLatencies.length > 100) this.queryLatencies.shift();
+      return result;
+    };
+
     if (options.ids && options.ids.length > 0) {
       const idSet = new Set(options.ids.map(id => (id || '').trim()).filter(Boolean));
       const matched: Article[] = [];
@@ -588,10 +631,10 @@ export class NewsRepository {
         const art = this.getArticleById(id);
         if (art) matched.push(art);
       }
-      return {
+      return finish({
         articles: matched,
         total: matched.length
-      };
+      });
     }
 
     const isDefaultSort = !options.sort || options.sort === 'latest';
@@ -634,10 +677,10 @@ export class NewsRepository {
           a.image_url = null;
         }
       }
-      return {
+      return finish({
         articles: paginated,
         total: feed.length
-      };
+      });
     }
 
     let candidateList: Article[];
@@ -774,7 +817,7 @@ export class NewsRepository {
       }
     }
 
-    return { articles: paginated, total };
+    return finish({ articles: paginated, total });
   }
 
   public recordFetchRun(log: FetchRunLog) {
@@ -845,17 +888,20 @@ export class NewsRepository {
   }
 
   public registerSource(source: { id: string; name: string; enabled: boolean }) {
+    if (this.sourceOverrides.has(source.id)) {
+      source.enabled = this.sourceOverrides.get(source.id)!;
+    }
     if (!this.sourceHealthMap.has(source.id)) {
       this.sourceHealthMap.set(source.id, {
         sourceId: source.id,
         sourceName: source.name,
-        status: 'healthy',
+        status: source.enabled ? 'healthy' : 'disabled',
         enabled: source.enabled,
         lastSuccess: null,
         lastFailure: null,
         lastFetch: null,
         lastError: null,
-        lastDurationMs: 45,
+        lastDurationMs: null,
         itemsReceivedTotal: 0,
         itemsInsertedTotal: 0,
         itemsDuplicateTotal: 0,
@@ -864,10 +910,37 @@ export class NewsRepository {
         totalFetches: 0,
         totalSuccesses: 0,
         totalArticlesFetched: 0,
-        avgLatencyMs: 45,
-        averageResponseTimeMs: 45
+        avgLatencyMs: null,
+        averageResponseTimeMs: null
       });
     }
+  }
+
+  public saveCustomSource(source: any) {
+    const existingIdx = this.customSources.findIndex(s => s.id === source.id);
+    if (existingIdx >= 0) {
+      this.customSources[existingIdx] = source;
+    } else {
+      this.customSources.push(source);
+    }
+    this.flushSave();
+  }
+
+  public getCustomSources(): any[] {
+    return [...this.customSources];
+  }
+
+  public saveSourceOverride(sourceId: string, enabled: boolean) {
+    this.sourceOverrides.set(sourceId, enabled);
+    const health = this.sourceHealthMap.get(sourceId);
+    if (health) {
+      health.enabled = enabled;
+      health.status = enabled ? (health.lastError ? 'degraded' : 'healthy') : 'disabled';
+    }
+    if ((SOURCES as any)[sourceId]) {
+      (SOURCES as any)[sourceId].enabled = enabled;
+    }
+    this.flushSave();
   }
 
   public getSourceHealth(sourceId?: string): SourceHealth[] {
@@ -879,17 +952,28 @@ export class NewsRepository {
   }
 
   public setSourceEnabled(sourceId: string, enabled: boolean): boolean {
+    this.sourceOverrides.set(sourceId, enabled);
     const health = this.sourceHealthMap.get(sourceId);
     if (health) {
       health.enabled = enabled;
       health.status = enabled ? (health.lastError ? 'degraded' : 'healthy') : 'disabled';
-      return true;
     }
-    return false;
+    if ((SOURCES as any)[sourceId]) {
+      (SOURCES as any)[sourceId].enabled = enabled;
+    }
+    this.scheduleSave(1000);
+    return true;
   }
 
   public getFetchRuns(limit: number = 50): FetchRunLog[] {
     return this.fetchRuns.slice(0, limit);
+  }
+
+  public getQueryP95Ms(): number | null {
+    if (this.queryLatencies.length === 0) return null;
+    const sorted = [...this.queryLatencies].sort((a, b) => a - b);
+    const idx = Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95));
+    return Math.round(sorted[idx] * 10) / 10;
   }
 
   public getStats() {
@@ -905,16 +989,17 @@ export class NewsRepository {
     const healthList = Array.from(this.sourceHealthMap.values());
     const validLatencies = healthList
       .map(h => h.avgLatencyMs || h.averageResponseTimeMs || 0)
-      .filter(l => l > 0);
+      .filter((l): l is number => typeof l === 'number' && l > 0);
     const avgLatency = validLatencies.length > 0
       ? Math.round(validLatencies.reduce((a, b) => a + b, 0) / validLatencies.length)
-      : 42;
+      : null;
 
     return {
       totalArticles,
       categoryCounts,
       sourceCounts,
       avgLatencyMs: avgLatency,
+      queryP95Ms: this.getQueryP95Ms(),
       totalSources: Object.keys(SOURCES).length,
       activeSources: healthList.filter(s => s.enabled).length,
       healthySources: healthList.filter(s => s.status === 'healthy').length

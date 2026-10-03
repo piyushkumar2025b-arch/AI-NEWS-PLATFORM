@@ -111,9 +111,9 @@ export interface SourceHealth {
   totalFetches: number;
   totalSuccesses: number;
   totalArticlesFetched: number;
-  avgLatencyMs: number;
-  averageResponseTimeMs?: number;
-  lastDurationMs?: number;
+  avgLatencyMs?: number | null;
+  averageResponseTimeMs?: number | null;
+  lastDurationMs?: number | null;
   itemsReceivedTotal?: number;
   itemsInsertedTotal?: number;
   itemsDuplicateTotal?: number;

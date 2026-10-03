@@ -34,9 +34,9 @@ export class HealthHandler {
         heapUsedMb: Math.round(mem.heapUsed / (1024 * 1024))
       },
       latency: {
-        avgIngestionMs: (stats as any).avgLatencyMs || 42,
-        cacheReadMs: 0.5,
-        queryP95Ms: 3.8
+        avgIngestionMs: (stats as any).avgLatencyMs ?? null,
+        cacheReadMs: cacheService.getAvgCacheReadMs(),
+        queryP95Ms: (stats as any).queryP95Ms ?? null
       },
       uptimeSeconds: uptimeSec
     };

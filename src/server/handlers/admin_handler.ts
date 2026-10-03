@@ -19,7 +19,7 @@ export class AdminHandler {
     } catch (err: any) {
       res.status(500).json({
         success: false,
-        error: { message: err.message || `Failed to fetch source '${sourceId}'` },
+        error: { message: 'An unexpected internal server error occurred' },
         request_id: (req as any).requestId
       });
     }

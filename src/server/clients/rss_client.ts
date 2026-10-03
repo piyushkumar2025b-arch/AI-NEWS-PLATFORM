@@ -367,12 +367,13 @@ export class RssClient {
     }
   }
 
-  async fetchAndParse(url: string, sourceId: string, options: { timeoutMs?: number; maxRetries?: number; headers?: Record<string, string> } = {}) {
+  async fetchAndParse(url: string, sourceId: string, options: { timeoutMs?: number; maxRetries?: number; headers?: Record<string, string>; signal?: AbortSignal } = {}) {
     const res = await httpClient.get(url, {
       sourceId,
       timeoutMs: options.timeoutMs,
       maxRetries: options.maxRetries,
-      headers: options.headers
+      headers: options.headers,
+      signal: options.signal
     });
     const xml = typeof res.data === 'string' ? res.data : JSON.stringify(res.data);
     return this.parseXml(xml);

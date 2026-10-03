@@ -14,6 +14,7 @@ export class CacheService {
   private maxEntries: number = 2000;
   private hits: number = 0;
   private misses: number = 0;
+  private readLatencies: number[] = [];
   private cleanupTimer: NodeJS.Timeout | null = null;
 
   constructor() {
@@ -32,22 +33,37 @@ export class CacheService {
   }
 
   public async get<T = any>(key: string): Promise<T | null> {
-    const entry = this.store.get(key);
-    if (!entry) {
-      this.misses++;
-      return null;
-    }
+    const t0 = performance.now();
+    try {
+      const entry = this.store.get(key);
+      if (!entry) {
+        this.misses++;
+        return null;
+      }
 
-    const now = Date.now();
-    if (now > entry.expiresAt) {
-      this.store.delete(key);
-      this.misses++;
-      return null;
-    }
+      const now = Date.now();
+      if (now > entry.expiresAt) {
+        this.store.delete(key);
+        this.misses++;
+        return null;
+      }
 
-    entry.lastAccessed = now;
-    this.hits++;
-    return entry.value as T;
+      entry.lastAccessed = now;
+      this.hits++;
+      return entry.value as T;
+    } finally {
+      const duration = performance.now() - t0;
+      this.readLatencies.push(duration);
+      if (this.readLatencies.length > 100) {
+        this.readLatencies.shift();
+      }
+    }
+  }
+
+  public getAvgCacheReadMs(): number | null {
+    if (this.readLatencies.length === 0) return null;
+    const avg = this.readLatencies.reduce((a, b) => a + b, 0) / this.readLatencies.length;
+    return Math.round(avg * 100) / 100;
   }
 
   public async set<T = any>(key: string, value: T, ttlSeconds: number = 60): Promise<void> {

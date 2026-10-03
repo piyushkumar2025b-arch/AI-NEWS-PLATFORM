@@ -56,6 +56,7 @@ export class SourceService {
 
     (SOURCES as any)[id] = sourceObj;
     newsRepository.registerSource(sourceObj);
+    newsRepository.saveCustomSource(sourceObj);
 
     return sourceObj;
   }
@@ -87,6 +88,7 @@ export class SourceService {
     if (!s) return null;
     s.enabled = enabled;
     newsRepository.setSourceEnabled(id, enabled);
+    newsRepository.saveSourceOverride(id, enabled);
     const conn = getConnector(id);
     if (conn && conn.definition) {
       conn.definition.enabled = enabled;

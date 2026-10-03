@@ -24,7 +24,10 @@ import { mediaResolver } from '../src/server/services/media_resolver.js';
 import { sourceService } from '../src/server/services/source_service.js';
 import { ValidationError } from '../src/server/errors/exceptions.js';
 import { adminAuthMiddleware, corsMiddleware } from '../src/server/api/middleware.js';
-import { settings } from '../src/server/config/settings.js';
+import { settings, loadSettings } from '../src/server/config/settings.js';
+import { errorHandler } from '../src/server/errors/handlers.js';
+import { scheduler } from '../src/server/workers/scheduler.js';
+import { httpClient } from '../src/server/clients/http_client.js';
 
 let passed = 0;
 let failed = 0;
@@ -686,6 +689,135 @@ async function runAllTests() {
 
       const isNumericLoopbackSafe = await mediaResolver.verifyDnsSafety('127.0.0.1');
       assert.strictEqual(isNumericLoopbackSafe, false, '127.0.0.1 should fail DNS safety check');
+    }),
+
+    // Regression: BUG-001 (PORT and HOST environment variables are respected)
+    test('Regression BUG-001: loadSettings() parses PORT and HOST from environment', () => {
+      const prevPort = process.env.PORT;
+      const prevHost = process.env.HOST;
+
+      try {
+        process.env.PORT = '8099';
+        process.env.HOST = '127.0.0.5';
+
+        const s = loadSettings();
+        assert.strictEqual(s.port, 8099, 'PORT env variable must be parsed as number');
+        assert.strictEqual(s.host, '127.0.0.5', 'HOST env variable must be respected');
+      } finally {
+        if (prevPort !== undefined) process.env.PORT = prevPort;
+        else delete process.env.PORT;
+        if (prevHost !== undefined) process.env.HOST = prevHost;
+        else delete process.env.HOST;
+      }
+    }),
+
+    // Regression: BUG-002 (Custom sources persistence)
+    test('Regression BUG-002: Custom sources are persisted in repository store', () => {
+      const uniqueName = `Test Custom Source ${Date.now()}`;
+      const src = sourceService.addSource({
+        name: uniqueName,
+        url: 'https://example.com/feed.xml',
+        category: 'technology'
+      });
+
+      assert.ok(src.id, 'Custom source should have an assigned ID');
+      const savedSources = newsRepository.getCustomSources();
+      assert.ok(
+        savedSources.some(s => s.id === src.id),
+        'Added custom source must be recorded in repository customSources'
+      );
+    }),
+
+    // Regression: BUG-010 (Source enable/disable persistence)
+    test('Regression BUG-010: Source enable/disable state is saved and tracked', () => {
+      sourceService.setSourceEnabled('arxiv', false);
+      let health = newsRepository.getSourceHealth('arxiv');
+      assert.strictEqual(health[0]?.enabled, false, 'Source should be marked disabled');
+      assert.strictEqual(health[0]?.status, 'disabled');
+
+      // Re-enable
+      sourceService.setSourceEnabled('arxiv', true);
+      health = newsRepository.getSourceHealth('arxiv');
+      assert.strictEqual(health[0]?.enabled, true, 'Source should be marked enabled');
+    }),
+
+    // Regression: BUG-003 (Per-source fetchIntervalMinutes is respected)
+    test('Regression BUG-003: Scheduler respects per-source fetchIntervalMinutes', () => {
+      const sourceId = 'arxiv';
+      const now = Date.now();
+
+      // Source fetched 1 minute ago should NOT be due for a 15-30 minute interval
+      scheduler.recordSourceFetch(sourceId, now - 60 * 1000);
+      assert.strictEqual(
+        scheduler.isSourceDue(sourceId, now),
+        false,
+        'Source fetched recently should not be due'
+      );
+
+      // Source fetched 60 minutes ago SHOULD be due
+      scheduler.recordSourceFetch(sourceId, now - 60 * 60 * 1000);
+      assert.strictEqual(
+        scheduler.isSourceDue(sourceId, now),
+        true,
+        'Source fetched 60m ago should be due for refresh'
+      );
+    }),
+
+    // Regression: BUG-004 (Internal 5xx exception messages are sanitized for API clients)
+    test('Regression BUG-004: errorHandler masks 5xx internal exception messages for clients', () => {
+      let statusSent = 0;
+      let jsonSent: any = null;
+
+      const mockReq: any = { method: 'GET', url: '/api/v1/news', requestId: 'req_test_123' };
+      const mockRes: any = {
+        status: (code: number) => {
+          statusSent = code;
+          return {
+            json: (body: any) => { jsonSent = body; }
+          };
+        }
+      };
+
+      const internalErr = new Error('DATABASE DISK CORRUPTION AT /var/data/internal.db: access denied');
+      errorHandler(internalErr, mockReq, mockRes, () => {});
+
+      assert.strictEqual(statusSent, 500);
+      assert.strictEqual(
+        jsonSent?.error?.message,
+        'An unexpected internal server error occurred',
+        'Client must receive sanitized error message without filesystem paths or internal details'
+      );
+      assert.strictEqual(jsonSent?.request_id, 'req_test_123');
+    }),
+
+    // Regression: BUG-005 (Connector cancellation signal aborts underlying request)
+    test('Regression BUG-005: HttpClient immediately respects caller AbortSignal', async () => {
+      const controller = new AbortController();
+      controller.abort(new Error('Ingestion cycle timed out'));
+
+      let threw = false;
+      try {
+        await httpClient.get('https://example.com/test', {
+          signal: controller.signal,
+          maxRetries: 0
+        });
+      } catch (err: any) {
+        threw = true;
+        assert.ok(
+          err.message.includes('aborted') || err.message.includes('AbortError') || err.name === 'AbortError',
+          `Expected abort error, got: ${err.message}`
+        );
+      }
+      assert.strictEqual(threw, true, 'Aborted signal must reject request immediately without hanging');
+    }),
+
+    // Regression: BUG-011 (Scheduler stop cancels startup timer)
+    test('Regression BUG-011: Scheduler stop clears startup timer safely without race', () => {
+      scheduler.start();
+      assert.strictEqual(scheduler.isRunning(), true, 'Scheduler should be running after start');
+
+      scheduler.stop();
+      assert.strictEqual(scheduler.isRunning(), false, 'Scheduler should be stopped after stop');
     })
   ];
 

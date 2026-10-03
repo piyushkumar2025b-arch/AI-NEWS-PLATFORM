@@ -1,4 +1,5 @@
 import { BaseConnector } from './base.js';
+import { httpClient } from '../clients/http_client.js';
 
 export class HnAiConnector extends BaseConnector {
   public definition = {
@@ -12,21 +13,22 @@ export class HnAiConnector extends BaseConnector {
     fetchIntervalMinutes: 15
   };
 
-  async fetch(options: { query?: string; limit?: number } = {}): Promise<{ rawItems: any[]; durationMs: number; sourceId: string; sourceName: string }> {
+  async fetch(options: { query?: string; limit?: number; signal?: AbortSignal } = {}): Promise<{ rawItems: any[]; durationMs: number; sourceId: string; sourceName: string }> {
     const startTime = Date.now();
     const limit = Math.min(30, options.limit || 20);
     const query = options.query || 'AI OR LLM OR GPT OR OpenAI OR Claude OR neural OR machine learning';
     const rawItems: any[] = [];
 
     try {
-      const res = await fetch(`https://hn.algolia.com/api/v1/search_by_date?tags=story&query=${encodeURIComponent(query)}&hitsPerPage=${limit}`, {
-        headers: { 'User-Agent': 'AITechPulseNews/1.0' },
-        signal: AbortSignal.timeout(8000)
+      const res = await httpClient.get(`https://hn.algolia.com/api/v1/search_by_date?tags=story&query=${encodeURIComponent(query)}&hitsPerPage=${limit}`, {
+        sourceId: this.definition.id,
+        timeoutMs: 8000,
+        signal: options.signal
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        for (const item of (data.hits || [])) {
+      const data = res.data;
+      if (data && Array.isArray(data.hits)) {
+        for (const item of data.hits) {
           if (!item.title) continue;
           const storyUrl = item.url || `https://news.ycombinator.com/item?id=${item.objectID}`;
           const hnDiscussionUrl = `https://news.ycombinator.com/item?id=${item.objectID}`;
@@ -80,4 +82,3 @@ export class HnAiConnector extends BaseConnector {
 }
 
 export const hnAiConnector = new HnAiConnector();
-

@@ -49,13 +49,22 @@ const PRIORITY_SOURCE_IDS = new Set([
 
 async function fetchFromConnector(connector: any, options: { limit?: number; signal?: AbortSignal } = { limit: 15 }): Promise<any[]> {
   const abortController = new AbortController();
+  const onCallerAbort = () => abortController.abort(options.signal?.reason);
+  if (options.signal) {
+    if (options.signal.aborted) {
+      abortController.abort(options.signal.reason);
+    } else {
+      options.signal.addEventListener('abort', onCallerAbort, { once: true });
+    }
+  }
+
   const connectorOptions = { ...options, signal: abortController.signal };
 
   // 7-second safeguard timeout per source to prevent hanging sockets with proper cleanup
   let timer: NodeJS.Timeout | undefined;
   const timeoutPromise = new Promise<any[]>((_, reject) => {
     timer = setTimeout(() => {
-      abortController.abort();
+      abortController.abort(new Error('Connector fetch timed out after 7s'));
       reject(new Error('Connector fetch timed out after 7s'));
     }, 7000);
     timer.unref?.();
@@ -79,6 +88,9 @@ async function fetchFromConnector(connector: any, options: { limit?: number; sig
     return await Promise.race([fetchPromise, timeoutPromise]);
   } finally {
     if (timer) clearTimeout(timer);
+    if (options.signal) {
+      options.signal.removeEventListener('abort', onCallerAbort);
+    }
   }
 }
 
@@ -87,14 +99,35 @@ export class IngestionWorker {
   private operations = new Map<string, IngestionOperation>();
   private isRunning = false;
 
-  triggerIngestion(): IngestionOperation {
+  triggerIngestion(targetSourceIds?: string[]): IngestionOperation {
     if (this.isRunning && this.currentOperation && this.currentOperation.status === 'running') {
       return this.currentOperation;
     }
 
     const operationId = `op_${Date.now()}`;
     const all = getAllConnectors();
-    const activeConnectors = all.filter(c => c.isEnabled());
+    let activeConnectors = all.filter(c => c.isEnabled());
+    if (targetSourceIds && targetSourceIds.length > 0) {
+      const targetSet = new Set(targetSourceIds);
+      activeConnectors = activeConnectors.filter(c => targetSet.has(c.getSourceId()));
+    }
+
+    if (activeConnectors.length === 0) {
+      const emptyOp: IngestionOperation = {
+        operationId,
+        status: 'completed',
+        startedAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+        sourcesProcessed: 0,
+        totalSources: 0,
+        itemsReceived: 0,
+        itemsInserted: 0,
+        itemsDuplicate: 0,
+        failedSources: 0
+      };
+      this.currentOperation = emptyOp;
+      return emptyOp;
+    }
 
     // Sort priority sources first
     activeConnectors.sort((a, b) => {

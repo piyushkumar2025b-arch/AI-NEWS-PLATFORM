@@ -1,4 +1,5 @@
 import { BaseConnector } from './base.js';
+import { httpClient } from '../clients/http_client.js';
 
 export class GithubConnector extends BaseConnector {
   public definition = {
@@ -12,7 +13,7 @@ export class GithubConnector extends BaseConnector {
     fetchIntervalMinutes: 30
   };
 
-  async fetch(options: { query?: string; limit?: number } = {}): Promise<{ rawItems: any[]; durationMs: number; sourceId: string; sourceName: string }> {
+  async fetch(options: { query?: string; limit?: number; signal?: AbortSignal } = {}): Promise<{ rawItems: any[]; durationMs: number; sourceId: string; sourceName: string }> {
     const startTime = Date.now();
     const limit = Math.min(25, options.limit || 15);
     const query = options.query || 'topic:artificial-intelligence+topic:llm+topic:machine-learning';
@@ -20,21 +21,22 @@ export class GithubConnector extends BaseConnector {
 
     try {
       const headers: Record<string, string> = {
-        'User-Agent': 'AITechPulseNews/1.0',
         'Accept': 'application/vnd.github.v3+json'
       };
       if (process.env.GITHUB_TOKEN) {
         headers['Authorization'] = `token ${process.env.GITHUB_TOKEN}`;
       }
 
-      const res = await fetch(`https://api.github.com/search/repositories?q=${encodeURIComponent(query)}&sort=updated&order=desc&per_page=${limit}`, {
+      const res = await httpClient.get(`https://api.github.com/search/repositories?q=${encodeURIComponent(query)}&sort=updated&order=desc&per_page=${limit}`, {
         headers,
-        signal: AbortSignal.timeout(8000)
+        sourceId: this.definition.id,
+        timeoutMs: 8000,
+        signal: options.signal
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        for (const item of (data.items || [])) {
+      const data = res.data;
+      if (data && Array.isArray(data.items)) {
+        for (const item of data.items) {
           rawItems.push({
             title: `${item.full_name}: ${item.description || 'Open source artificial intelligence repository'}`,
             url: item.html_url,
@@ -83,4 +85,3 @@ export class GithubConnector extends BaseConnector {
 }
 
 export const githubConnector = new GithubConnector();
-

@@ -8,13 +8,15 @@ export const restProtocol = {
     timeoutMs?: number;
     maxRetries?: number;
     headers?: Record<string, string>;
+    signal?: AbortSignal;
   }) {
     const res = await httpClient.get(options.url, {
       sourceId: options.sourceId,
       params: options.params,
       timeoutMs: options.timeoutMs,
       maxRetries: options.maxRetries,
-      headers: options.headers
+      headers: options.headers,
+      signal: options.signal
     });
     return res.data;
   }
