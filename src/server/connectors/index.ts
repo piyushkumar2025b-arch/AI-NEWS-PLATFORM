@@ -311,6 +311,10 @@ for (const def of additionalDefs) {
   }
 }
 
+export function registerConnector(id: string, connector: BaseConnector) {
+  connectorRegistry.set(id, connector);
+}
+
 export function getAllConnectors(): BaseConnector[] {
   for (const [id, source] of Object.entries(SOURCES)) {
     if (!connectorRegistry.has(id)) {

@@ -44,19 +44,20 @@ export class SourceService {
       id,
       name: input.name.trim(),
       baseUrl: trimmedUrl,
-      protocol: 'rss' as const,
+      protocol: (input.protocol as any) || (trimmedUrl.includes('atom') ? 'atom' : 'rss'),
       category: input.category || 'technology',
       tier: 'tertiary' as const,
       enabled: input.enabled !== false,
       requiresKey: false,
       region: 'Global',
       reliabilityScore: 0.9,
-      fetchIntervalMinutes: 30
+      fetchIntervalMinutes: input.fetchIntervalMinutes && input.fetchIntervalMinutes > 0 ? input.fetchIntervalMinutes : 30
     };
 
     (SOURCES as any)[id] = sourceObj;
     newsRepository.registerSource(sourceObj);
     newsRepository.saveCustomSource(sourceObj);
+    getConnector(id);
 
     return sourceObj;
   }

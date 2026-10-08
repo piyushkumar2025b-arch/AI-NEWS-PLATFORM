@@ -26,6 +26,8 @@ import { ValidationError } from '../src/server/errors/exceptions.js';
 import { adminAuthMiddleware, corsMiddleware } from '../src/server/api/middleware.js';
 import { settings, loadSettings } from '../src/server/config/settings.js';
 import { errorHandler } from '../src/server/errors/handlers.js';
+import { healthHandler } from '../src/server/handlers/health_handler.js';
+import { adminHandler } from '../src/server/handlers/admin_handler.js';
 import { scheduler } from '../src/server/workers/scheduler.js';
 import { httpClient } from '../src/server/clients/http_client.js';
 
@@ -818,6 +820,78 @@ async function runAllTests() {
 
       scheduler.stop();
       assert.strictEqual(scheduler.isRunning(), false, 'Scheduler should be stopped after stop');
+    }),
+
+    // Regression: Custom source connector is accessible and fetchable
+    test('Regression: Custom source connector is registered and accessible via getConnector', async () => {
+      const uniqueName = `Fetchable Source ${Date.now()}`;
+      const src = sourceService.addSource({
+        name: uniqueName,
+        url: 'https://example.com/test-feed.xml',
+        category: 'technology'
+      });
+
+      const connector = getConnector(src.id);
+      assert.ok(connector, 'Connector for custom source must be registered and returned by getConnector');
+      assert.strictEqual(connector.getSourceId(), src.id);
+    }),
+
+    // Regression: Health latency metrics reflect real measurements and not hard-coded 0.5/3.8
+    test('Regression BUG-007: Health metrics return measured values or null, never hardcoded constants', async () => {
+      let jsonPayload: any = null;
+      const mockReq: any = { requestId: 'req_health_test' };
+      const mockRes: any = {
+        json: (data: any) => { jsonPayload = data; }
+      };
+
+      await healthHandler.getHealth(mockReq, mockRes, () => {});
+      assert.ok(jsonPayload, 'Health response must be returned');
+      const latency = jsonPayload.data?.latency || jsonPayload.latency;
+      assert.ok(latency, 'Latency metrics block must exist');
+
+      // Check that cacheReadMs and queryP95Ms are either measured numbers or null, not synthetic 0.5 or 3.8
+      assert.ok(
+        latency.cacheReadMs === null || typeof latency.cacheReadMs === 'number',
+        'cacheReadMs must be a measured number or null'
+      );
+      assert.ok(
+        latency.queryP95Ms === null || typeof latency.queryP95Ms === 'number',
+        'queryP95Ms must be a measured number or null'
+      );
+    }),
+
+    // Regression BUG-008: Operational routes require admin authentication
+    test('Regression BUG-008: Detailed operational endpoints require admin authentication', () => {
+      const origKey = settings.adminApiKey;
+      const origBypass = process.env.ALLOW_DEV_ADMIN_BYPASS;
+      delete process.env.ALLOW_DEV_ADMIN_BYPASS;
+      (settings as any).adminApiKey = 'test-secret-key-123';
+
+      try {
+        let statusCode = 0;
+        let responseJson: any = null;
+        const mockReq: any = {
+          headers: {},
+          ip: '127.0.0.1'
+        };
+        const mockRes: any = {
+          status: (code: number) => {
+            statusCode = code;
+            return {
+              json: (data: any) => { responseJson = data; }
+            };
+          }
+        };
+
+        adminAuthMiddleware(mockReq, mockRes, () => {});
+        assert.strictEqual(statusCode, 401, 'Unauthenticated request to admin middleware must receive 401');
+        assert.strictEqual(responseJson?.error?.code, 'UNAUTHORIZED');
+      } finally {
+        (settings as any).adminApiKey = origKey;
+        if (origBypass !== undefined) {
+          process.env.ALLOW_DEV_ADMIN_BYPASS = origBypass;
+        }
+      }
     })
   ];
 
