@@ -27,9 +27,11 @@ export default function App() {
   // Data states
   const [articles, setArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
-  const [visibleCount, setVisibleCount] = useState<number>(25);
+  const [visibleCount, setVisibleCount] = useState<number>(30);
 
   // Personalization: saved articles & read history stored in localStorage
   const [savedIds, setSavedIds] = useState<Set<string>>(() => {
@@ -90,18 +92,18 @@ export default function App() {
       setLoading(true);
       setError(null);
 
-      let url = '/api/v1/news?limit=120';
+      let url = '/api/v1/news?limit=250';
       if (selectedSource) {
-        url = `/api/v1/news?source_id=${encodeURIComponent(selectedSource)}&limit=120`;
+        url = `/api/v1/news?source_id=${encodeURIComponent(selectedSource)}&limit=250`;
       } else if (activeTab === 'frontier') {
         url += '&category=ai';
       } else if (activeTab === 'research') {
         url += '&source_type=research';
       } else if (activeTab === 'media') {
-        url = '/api/v1/videos?limit=60';
+        url = '/api/v1/videos?limit=100';
       } else if (activeTab === 'saved') {
         if (savedIds.size > 0) {
-          url = `/api/v1/news?ids=${Array.from(savedIds).join(',')}&limit=120`;
+          url = `/api/v1/news?ids=${Array.from(savedIds).join(',')}&limit=250`;
         } else {
           setArticles([]);
           setLoading(false);
@@ -124,6 +126,35 @@ export default function App() {
       setLoading(false);
     }
   }, [activeTab, selectedSource, savedIds]);
+
+  // Live on-demand background refresh from external feeds
+  const handleLiveRefresh = useCallback(async () => {
+    try {
+      setIsRefreshing(true);
+      setRefreshMessage('Connecting to live feeds...');
+      const res = await fetch('/api/v1/news/refresh', { method: 'POST' });
+      if (res.ok) {
+        const json = await res.json();
+        if (Array.isArray(json.data) && json.data.length > 0) {
+          setArticles(json.data);
+          setRefreshMessage(`Refreshed! Loaded ${json.data.length} latest dispatches`);
+        } else {
+          await fetchArticles();
+          setRefreshMessage('Refreshed with latest dispatches');
+        }
+      } else {
+        await fetchArticles();
+        setRefreshMessage('Refreshed feed');
+      }
+    } catch (e) {
+      console.error('Refresh error:', e);
+      await fetchArticles();
+      setRefreshMessage('Feed updated');
+    } finally {
+      setIsRefreshing(false);
+      setTimeout(() => setRefreshMessage(null), 3500);
+    }
+  }, [fetchArticles]);
 
   useEffect(() => {
     if (!searchQuery.trim()) {
@@ -227,11 +258,25 @@ export default function App() {
       {/* 1. Authentic Editorial Masthead (No top bar, no boxes, pure typography) */}
       <header className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pt-10 pb-6 border-b border-stone-200/80">
         {/* Top Dateline & User Greeting */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] uppercase tracking-[0.2em] font-medium text-stone-500 pb-4 border-b border-stone-200/50">
-          <div>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-[11px] uppercase tracking-[0.2em] font-medium text-stone-500 pb-4 border-b border-stone-200/50">
+          <div className="flex flex-wrap items-center gap-2">
             <span>{todayDateString}</span>
-            <span className="mx-2 text-stone-300">·</span>
-            <span>Morning Briefing</span>
+            <span className="text-stone-300">·</span>
+            <span>Live Briefing</span>
+            <button
+              onClick={handleLiveRefresh}
+              disabled={isRefreshing}
+              title="Poll and ingest fresh news from active sources"
+              className="ml-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[10px] font-semibold tracking-wider uppercase text-stone-800 bg-stone-200/70 hover:bg-stone-300/80 active:bg-stone-300 border border-stone-300/60 transition-colors cursor-pointer disabled:opacity-50"
+            >
+              <RotateCw className={`h-3 w-3 ${isRefreshing ? 'animate-spin text-stone-900' : 'text-stone-600'}`} />
+              <span>{isRefreshing ? 'Fetching News...' : 'Fetch Latest News'}</span>
+            </button>
+            {refreshMessage && (
+              <span className="text-[10px] text-stone-700 font-normal lowercase tracking-normal bg-stone-100 px-2 py-0.5 rounded border border-stone-200/60">
+                {refreshMessage}
+              </span>
+            )}
           </div>
           <div className="text-stone-400">
             Curated for <strong className="font-semibold text-stone-700">Piyush</strong>
