@@ -44,7 +44,10 @@ const PRIORITY_SOURCE_IDS = new Set([
   'simonw_ai',
   'marktechpost',
   'hackernoon_ai',
-  'hn_ai'
+  'hn_ai',
+  'reddit_ai',
+  'github_releases',
+  'topic_wire'
 ]);
 
 async function fetchFromConnector(connector: any, options: { limit?: number; signal?: AbortSignal } = { limit: 15 }): Promise<any[]> {

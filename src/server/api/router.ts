@@ -17,22 +17,10 @@ const apiRouter = Router();
 
 // News and Content APIs
 apiRouter.get("/news", (req, res, next) => newsHandler.getNews(req, res, next));
-apiRouter.post("/news/refresh", async (req, res, next) => {
-  try {
-    const op = scheduler.executeCycle(true);
-    const query = newsRepository.queryArticles({ limit: 60, sort: 'latest' });
-    res.json({
-      success: true,
-      message: "Initiated live refresh of latest dispatches",
-      operationId: op?.operationId || null,
-      count: query.articles.length,
-      data: query.articles,
-      request_id: (req as any).requestId
-    });
-  } catch (err) {
-    next(err);
-  }
-});
+apiRouter.post("/news/discover", (req, res, next) => newsHandler.discoverTopicOrUrl(req, res, next));
+apiRouter.get("/news/techniques", (req, res) => newsHandler.getTechniques(req, res));
+apiRouter.post("/news/techniques/:technique_id/run", (req, res, next) => newsHandler.runTechnique(req, res, next));
+apiRouter.post("/news/refresh", (req, res, next) => newsHandler.refreshNews(req, res, next));
 apiRouter.get("/news/latest", (req, res, next) => newsHandler.getLatest(req, res, next));
 apiRouter.get("/news/category/:category", (req, res, next) => newsHandler.getByCategory(req, res, next));
 apiRouter.get("/news/source/:source_id", (req, res, next) => newsHandler.getBySource(req, res, next));

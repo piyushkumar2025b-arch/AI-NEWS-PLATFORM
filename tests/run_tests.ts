@@ -30,6 +30,10 @@ import { healthHandler } from '../src/server/handlers/health_handler.js';
 import { adminHandler } from '../src/server/handlers/admin_handler.js';
 import { scheduler } from '../src/server/workers/scheduler.js';
 import { httpClient } from '../src/server/clients/http_client.js';
+import { multiTechniqueService } from '../src/server/services/multi_technique_service.js';
+import { mastodonAiConnector } from '../src/server/connectors/mastodon_ai.js';
+import { substackNewslettersConnector } from '../src/server/connectors/substack_newsletters.js';
+import { huggingFaceEcosystemConnector } from '../src/server/connectors/huggingface_ecosystem.js';
 
 let passed = 0;
 let failed = 0;
@@ -222,9 +226,9 @@ async function runAllTests() {
     }),
 
     test('Deduplication Pipeline identifies duplicates and links source provenance', () => {
-      const uniqueId = `unit-test-run-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
+      const uniqueId = `unit-${Date.now()}-${Math.floor(Math.random() * 1000000)}`;
       const raw1 = {
-        title: `Unique Hardware Benchmark Test Announcement ${uniqueId}`,
+        title: `${uniqueId} Novel Architecture Experiment Benchmark ${uniqueId}`,
         url: `https://nvidianews.nvidia.com/news/${uniqueId}`,
         description: 'New semiconductor architecture for trillion parameter models',
         sourceId: 'gdelt',
@@ -232,7 +236,7 @@ async function runAllTests() {
         publishedAt: '2026-09-01T10:00:00Z'
       };
       const raw2 = {
-        title: `Unique Hardware Benchmark Test Announcement ${uniqueId}`,
+        title: `${uniqueId} Novel Architecture Experiment Benchmark ${uniqueId}`,
         url: `https://nvidianews.nvidia.com/news/${uniqueId}?utm_source=rss`,
         description: 'Next generation GPU server architecture with liquid cooling',
         sourceId: 'google_news',
@@ -892,6 +896,37 @@ async function runAllTests() {
           process.env.ALLOW_DEV_ADMIN_BYPASS = origBypass;
         }
       }
+    }),
+
+    test('Techniques Engine: multiTechniqueService exposes comprehensive active techniques catalog', () => {
+      const techniques = multiTechniqueService.getTechniquesList();
+      assert(Array.isArray(techniques), 'Techniques list must be an array');
+      assert(techniques.length >= 8, `Expected at least 8 gathering techniques, got ${techniques.length}`);
+      
+      const techIds = new Set(techniques.map(t => t.id));
+      assert(techIds.has('hn_algolia_stream'), 'Must include hn_algolia_stream');
+      assert(techIds.has('topic_wire_swarm'), 'Must include topic_wire_swarm');
+      assert(techIds.has('arxiv_preprints'), 'Must include arxiv_preprints');
+      assert(techIds.has('github_releases_atom'), 'Must include github_releases_atom');
+      assert(techIds.has('hf_ecosystem'), 'Must include hf_ecosystem');
+      assert(techIds.has('independent_newsletters'), 'Must include independent_newsletters');
+      assert(techIds.has('mastodon_firehose'), 'Must include mastodon_firehose');
+      assert(techIds.has('tier1_tech_wire'), 'Must include tier1_tech_wire');
+      assert(techIds.has('structured_web_extractor'), 'Must include structured_web_extractor');
+    }),
+
+    test('Connectors Registry: New specialized techniques connectors are registered', () => {
+      const mastodon = getConnector('mastodon_ai');
+      assert(mastodon !== undefined, 'mastodon_ai connector must be registered');
+      assert.strictEqual(mastodon?.getSourceId(), 'mastodon_ai');
+
+      const substack = getConnector('substack_newsletters');
+      assert(substack !== undefined, 'substack_newsletters connector must be registered');
+      assert.strictEqual(substack?.getSourceId(), 'substack_newsletters');
+
+      const hf = getConnector('hf_ecosystem');
+      assert(hf !== undefined, 'hf_ecosystem connector must be registered');
+      assert.strictEqual(hf?.getSourceId(), 'hf_ecosystem');
     })
   ];
 

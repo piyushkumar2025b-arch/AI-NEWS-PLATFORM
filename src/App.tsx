@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { ArticleCard } from './components/ArticleCard.js';
 import { ArticleListItem } from './components/ArticleListItem.js';
 import { ArticleModal } from './components/ArticleModal.js';
+import { TechniquesRadarModal } from './components/TechniquesRadarModal.js';
 import { Article, CategoryInfo, SourceInfo } from './types.js';
 import {
   Search,
@@ -12,10 +13,18 @@ import {
   ArrowRight,
   Tv,
   Check,
-  RotateCw
+  RotateCw,
+  Compass,
+  Globe,
+  Cpu,
+  Layers,
+  Radio,
+  Code,
+  Radar,
+  X
 } from 'lucide-react';
 
-type SectionTab = 'for_you' | 'frontier' | 'research' | 'media' | 'saved';
+type SectionTab = 'for_you' | 'frontier' | 'research' | 'community' | 'releases' | 'media' | 'saved';
 
 export default function App() {
   // Navigation & View states
@@ -23,6 +32,14 @@ export default function App() {
   const [viewMode, setViewMode] = useState<'magazine' | 'compact'>('magazine');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedSource, setSelectedSource] = useState<string | null>(null);
+  const [selectedTopicTag, setSelectedTopicTag] = useState<string | null>(null);
+
+  // Discovery Modal states
+  const [showDiscoveryModal, setShowDiscoveryModal] = useState<boolean>(false);
+  const [discoverQuery, setDiscoverQuery] = useState<string>('');
+  const [discoverUrl, setDiscoverUrl] = useState<string>('');
+  const [isDiscovering, setIsDiscovering] = useState<boolean>(false);
+  const [discoveryStatus, setDiscoveryStatus] = useState<string | null>(null);
 
   // Data states
   const [articles, setArticles] = useState<Article[]>([]);
@@ -99,6 +116,10 @@ export default function App() {
         url += '&category=ai';
       } else if (activeTab === 'research') {
         url += '&source_type=research';
+      } else if (activeTab === 'community') {
+        url += '&category=community';
+      } else if (activeTab === 'releases') {
+        url += '&source_type=code';
       } else if (activeTab === 'media') {
         url = '/api/v1/videos?limit=100';
       } else if (activeTab === 'saved') {
@@ -109,6 +130,10 @@ export default function App() {
           setLoading(false);
           return;
         }
+      }
+
+      if (selectedTopicTag) {
+        url += `&tag=${encodeURIComponent(selectedTopicTag)}`;
       }
 
       const res = await fetch(url);
@@ -125,19 +150,61 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  }, [activeTab, selectedSource, savedIds]);
+  }, [activeTab, selectedSource, selectedTopicTag, savedIds]);
 
-  // Live on-demand background refresh from external feeds
+  // Topic & Web URL Discovery handler
+  const handleDiscover = useCallback(async (queryText?: string, targetUrl?: string) => {
+    const q = (queryText !== undefined ? queryText : discoverQuery).trim();
+    const u = (targetUrl !== undefined ? targetUrl : discoverUrl).trim();
+    if (!q && !u) return;
+
+    try {
+      setIsDiscovering(true);
+      setDiscoveryStatus(q ? `Scanning web wire & research preprints for "${q}"...` : `Discovering feed & extracting article from ${u}...`);
+      const res = await fetch('/api/v1/news/discover', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic: q || undefined, url: u || undefined })
+      });
+
+      if (res.ok) {
+        const json = await res.json();
+        if (Array.isArray(json.data) && json.data.length > 0) {
+          setArticles(json.data);
+          setDiscoveryStatus(`Success! Ingested ${json.ingestedCount || 0} new items. Displaying ${json.data.length} dispatches.`);
+        } else {
+          setDiscoveryStatus('Discovery completed. Re-checking feed.');
+          await fetchArticles();
+        }
+      } else {
+        setDiscoveryStatus('Discovery note: Unable to fetch external items, refreshed local index.');
+        await fetchArticles();
+      }
+    } catch (e: any) {
+      console.error('Discovery error:', e);
+      setDiscoveryStatus('Discovery completed with warnings.');
+      await fetchArticles();
+    } finally {
+      setIsDiscovering(false);
+      setTimeout(() => {
+        setShowDiscoveryModal(false);
+        setDiscoveryStatus(null);
+      }, 2500);
+    }
+  }, [discoverQuery, discoverUrl, fetchArticles]);
+
+  // Live on-demand background refresh from external feeds across multiple techniques
   const handleLiveRefresh = useCallback(async () => {
     try {
       setIsRefreshing(true);
-      setRefreshMessage('Connecting to live feeds...');
+      setRefreshMessage('Connecting multi-technique ingestion sweep...');
       const res = await fetch('/api/v1/news/refresh', { method: 'POST' });
       if (res.ok) {
         const json = await res.json();
         if (Array.isArray(json.data) && json.data.length > 0) {
           setArticles(json.data);
-          setRefreshMessage(`Refreshed! Loaded ${json.data.length} latest dispatches`);
+          const newCount = json.newItemsCount || (json.stats?.inserted ?? 0);
+          setRefreshMessage(`Refreshed! Loaded ${json.data.length} latest dispatches${newCount > 0 ? ` (${newCount} newly indexed)` : ''}`);
         } else {
           await fetchArticles();
           setRefreshMessage('Refreshed with latest dispatches');
@@ -152,7 +219,7 @@ export default function App() {
       setRefreshMessage('Feed updated');
     } finally {
       setIsRefreshing(false);
-      setTimeout(() => setRefreshMessage(null), 3500);
+      setTimeout(() => setRefreshMessage(null), 4500);
     }
   }, [fetchArticles]);
 
@@ -272,6 +339,14 @@ export default function App() {
               <RotateCw className={`h-3 w-3 ${isRefreshing ? 'animate-spin text-stone-900' : 'text-stone-600'}`} />
               <span>{isRefreshing ? 'Fetching News...' : 'Fetch Latest News'}</span>
             </button>
+            <button
+              onClick={() => setShowDiscoveryModal(true)}
+              title="Explore and trigger 10+ news gathering techniques"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[10px] font-semibold tracking-wider uppercase text-stone-800 bg-stone-200/70 hover:bg-stone-300/80 active:bg-stone-300 border border-stone-300/60 transition-colors cursor-pointer"
+            >
+              <Radar className="h-3 w-3 text-stone-700" />
+              <span>News Radar & Techniques</span>
+            </button>
             {refreshMessage && (
               <span className="text-[10px] text-stone-700 font-normal lowercase tracking-normal bg-stone-100 px-2 py-0.5 rounded border border-stone-200/60">
                 {refreshMessage}
@@ -375,6 +450,14 @@ export default function App() {
                 <span className="text-xs text-stone-400 font-normal">({savedIds.size})</span>
               )}
             </button>
+
+            <button
+              onClick={() => setShowDiscoveryModal(true)}
+              className="pb-1 cursor-pointer transition-colors text-stone-600 hover:text-stone-900 relative whitespace-nowrap flex items-center gap-1 font-medium"
+            >
+              <Radar className="h-3.5 w-3.5 text-stone-600" />
+              <span>Techniques Radar</span>
+            </button>
           </div>
 
           {/* Quiet Layout Switcher */}
@@ -399,12 +482,23 @@ export default function App() {
           </div>
         </nav>
 
-        {/* Selected Source Indicator */}
-        {selectedSource && (
+        {/* Selected Source or Topic Tag Indicator */}
+        {(selectedSource || selectedTopicTag) && (
           <div className="flex items-center justify-between pt-3 text-xs text-stone-600 border-t border-stone-200/40 mt-3">
-            <span>Filtered by publication: <strong className="font-semibold text-stone-900">{selectedSource}</strong></span>
+            <span>
+              {selectedSource && (
+                <>Filtered by publication: <strong className="font-semibold text-stone-900">{selectedSource}</strong></>
+              )}
+              {selectedSource && selectedTopicTag && <span className="mx-2 text-stone-300">·</span>}
+              {selectedTopicTag && (
+                <>Topic search: <strong className="font-semibold text-stone-900">{selectedTopicTag}</strong></>
+              )}
+            </span>
             <button
-              onClick={() => setSelectedSource(null)}
+              onClick={() => {
+                setSelectedSource(null);
+                setSelectedTopicTag(null);
+              }}
               className="text-stone-400 hover:text-stone-900 underline cursor-pointer text-[11px]"
             >
               Clear filter (Show all)
@@ -557,6 +651,18 @@ export default function App() {
         onClose={() => setSelectedArticle(null)}
         isBookmarked={selectedArticle ? savedIds.has(selectedArticle.id) : false}
         onToggleBookmark={toggleBookmark}
+      />
+
+      {/* 4. Multi-Technique Radar & Discovery Modal */}
+      <TechniquesRadarModal
+        isOpen={showDiscoveryModal}
+        onClose={() => setShowDiscoveryModal(false)}
+        onArticlesUpdated={(updatedArticles) => {
+          setArticles(updatedArticles);
+        }}
+        onSelectTopicTag={(tag) => {
+          setSelectedTopicTag(tag);
+        }}
       />
 
     </div>

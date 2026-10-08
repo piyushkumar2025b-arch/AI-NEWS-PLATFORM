@@ -228,3 +228,16 @@ export interface ApiResponse<T = any> {
   error?: ApiErrorDetail;
   request_id: string;
 }
+
+export interface TechniqueInfo {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  type: 'realtime_search' | 'rss_syndication' | 'preprints' | 'changelog_atom' | 'microblog_stream' | 'structured_extraction' | 'scholarly_api';
+  speed: 'instant' | 'fast' | 'moderate';
+  itemCount: number;
+  lastRunAt: string | null;
+  status: 'active' | 'ready';
+}
+

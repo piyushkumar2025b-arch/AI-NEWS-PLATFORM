@@ -8,6 +8,12 @@ import { hnAiConnector } from './hn_ai.js';
 import { openAiStatusConnector } from './openai_status.js';
 import { githubConnector } from './github.js';
 import { crossrefConnector } from './crossref.js';
+import { redditAiConnector } from './reddit_ai.js';
+import { githubReleasesConnector } from './github_releases.js';
+import { topicWireConnector } from './topic_wire.js';
+import { mastodonAiConnector } from './mastodon_ai.js';
+import { substackNewslettersConnector } from './substack_newsletters.js';
+import { huggingFaceEcosystemConnector } from './huggingface_ecosystem.js';
 
 class GenericConnector extends BaseConnector {
   declare definition: any;
@@ -286,6 +292,12 @@ connectorRegistry.set('hn_ai', hnAiConnector);
 connectorRegistry.set('openai_status', openAiStatusConnector);
 connectorRegistry.set('github', githubConnector as any);
 connectorRegistry.set('crossref', crossrefConnector as any);
+connectorRegistry.set('reddit_ai', redditAiConnector);
+connectorRegistry.set('github_releases', githubReleasesConnector);
+connectorRegistry.set('topic_wire', topicWireConnector);
+connectorRegistry.set('mastodon_ai', mastodonAiConnector);
+connectorRegistry.set('substack_newsletters', substackNewslettersConnector);
+connectorRegistry.set('hf_ecosystem', huggingFaceEcosystemConnector);
 
 // 4. Ensure test expected connectors and protocol specifications are registered without overwriting operational metadata
 const additionalDefs = [
@@ -333,4 +345,7 @@ export function getConnector(id: string): BaseConnector | undefined {
   }
   return connectorRegistry.get(id);
 }
+
+export { redditAiConnector, githubReleasesConnector, topicWireConnector };
+
 
