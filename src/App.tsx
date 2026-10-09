@@ -1,9 +1,15 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, Suspense } from 'react';
 import { ArticleCard } from './components/ArticleCard.js';
 import { ArticleListItem } from './components/ArticleListItem.js';
-import { ArticleModal } from './components/ArticleModal.js';
-import { TechniquesRadarModal } from './components/TechniquesRadarModal.js';
 import { Article, CategoryInfo, SourceInfo } from './types.js';
+
+// Code-split heavy modals to minimize initial bundle size and optimize main thread TTI
+const ArticleModal = React.lazy(() =>
+  import('./components/ArticleModal.js').then(module => ({ default: module.ArticleModal }))
+);
+const TechniquesRadarModal = React.lazy(() =>
+  import('./components/TechniquesRadarModal.js').then(module => ({ default: module.TechniquesRadarModal }))
+);
 import {
   Search,
   Bookmark,
@@ -105,9 +111,9 @@ export default function App() {
       setLoading(true);
       setError(null);
 
-      let url = '/api/v1/news?limit=250';
+      let url = '/api/v1/news?limit=120';
       if (selectedSource) {
-        url = `/api/v1/news?source_id=${encodeURIComponent(selectedSource)}&limit=250`;
+        url = `/api/v1/news?source_id=${encodeURIComponent(selectedSource)}&limit=120`;
       } else if (activeTab === 'frontier') {
         url += '&category=ai';
       } else if (activeTab === 'research') {
@@ -120,7 +126,7 @@ export default function App() {
         url = '/api/v1/videos?limit=100';
       } else if (activeTab === 'saved') {
         if (savedIds.size > 0) {
-          url = `/api/v1/news?ids=${Array.from(savedIds).join(',')}&limit=250`;
+          url = `/api/v1/news?ids=${Array.from(savedIds).join(',')}&limit=120`;
         } else {
           setArticles([]);
           setLoading(false);
@@ -258,6 +264,23 @@ export default function App() {
   const visibleArticles = useMemo(() => {
     return filteredArticles.slice(0, visibleCount);
   }, [filteredArticles, visibleCount]);
+
+  // Auto-reveal next page of dispatches smoothly via viewport intersection
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          setVisibleCount((prev) => Math.min(prev + 24, filteredArticles.length));
+        }
+      },
+      { rootMargin: '400px 0px' }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [filteredArticles.length]);
 
   // Separate hero, secondary, and rest for magazine layout
   const heroArticle = viewMode === 'magazine' && visibleArticles.length > 0 ? visibleArticles[0] : null;
@@ -584,12 +607,12 @@ export default function App() {
               </div>
             )}
 
-            {/* Load More Dispatches (Clean typographic prompt, not a chunky button) */}
+            {/* Progressive Infinite Load Sentinel */}
             {visibleCount < filteredArticles.length && (
-              <div className="pt-8 text-center">
+              <div ref={sentinelRef} className="pt-8 pb-4 text-center">
                 <button
                   onClick={() => setVisibleCount((prev) => Math.min(prev + 24, filteredArticles.length))}
-                  className="group inline-flex items-center gap-2 text-xs uppercase tracking-widest font-semibold text-stone-800 hover:text-stone-500 transition-colors cursor-pointer py-3"
+                  className="group inline-flex items-center gap-2 text-xs uppercase tracking-widest font-semibold text-stone-700 hover:text-stone-900 transition-colors cursor-pointer py-3"
                 >
                   <span>Load More Dispatches ({filteredArticles.length - visibleCount} remaining)</span>
                   <ArrowRight className="h-3.5 w-3.5 transform group-hover:translate-x-1 transition-transform" />
@@ -600,25 +623,33 @@ export default function App() {
         )}
       </main>
 
-      {/* 3. Pure Distraction-Free Reading Modal */}
-      <ArticleModal
-        article={selectedArticle}
-        onClose={() => setSelectedArticle(null)}
-        isBookmarked={selectedArticle ? savedIds.has(selectedArticle.id) : false}
-        onToggleBookmark={toggleBookmark}
-      />
+      {/* 3. Pure Distraction-Free Reading Modal (Lazy Code-Split) */}
+      <Suspense fallback={null}>
+        {selectedArticle && (
+          <ArticleModal
+            article={selectedArticle}
+            onClose={() => setSelectedArticle(null)}
+            isBookmarked={savedIds.has(selectedArticle.id)}
+            onToggleBookmark={toggleBookmark}
+          />
+        )}
+      </Suspense>
 
-      {/* 4. Multi-Technique Radar & Discovery Modal */}
-      <TechniquesRadarModal
-        isOpen={showDiscoveryModal}
-        onClose={() => setShowDiscoveryModal(false)}
-        onArticlesUpdated={(updatedArticles) => {
-          setArticles(updatedArticles);
-        }}
-        onSelectTopicTag={(tag) => {
-          setSelectedTopicTag(tag);
-        }}
-      />
+      {/* 4. Multi-Technique Radar & Discovery Modal (Lazy Code-Split) */}
+      <Suspense fallback={null}>
+        {showDiscoveryModal && (
+          <TechniquesRadarModal
+            isOpen={showDiscoveryModal}
+            onClose={() => setShowDiscoveryModal(false)}
+            onArticlesUpdated={(updatedArticles) => {
+              setArticles(updatedArticles);
+            }}
+            onSelectTopicTag={(tag) => {
+              setSelectedTopicTag(tag);
+            }}
+          />
+        )}
+      </Suspense>
 
     </div>
   );

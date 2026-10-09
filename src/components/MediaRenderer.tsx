@@ -18,6 +18,7 @@ import {
   getEditorialImageCandidates,
   getEditorialImage
 } from '../utils/editorialMedia.js';
+import { useInView } from '../utils/useInView.js';
 
 interface MediaRendererProps {
   media?: MediaAsset[];
@@ -35,6 +36,9 @@ interface MediaRendererProps {
 
 // Fast session cache for verified successful images (0-latency re-renders)
 const loadedImagesCache = new Set<string>();
+// In-memory cache for resolved OpenGraph media (avoids duplicate network calls)
+const clientResolvedMediaCache = new Map<string, string | null>();
+const clientInFlightResolutions = new Map<string, Promise<string | null>>();
 
 // Determine if URL requires immediate server-side tunneling
 function requiresImmediateTunneling(url: string): boolean {
@@ -126,29 +130,55 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
     return candidates;
   }, [ytVideoId, imageAsset?.url, fallbackImageUrl, media, articleUrl]);
 
+  const { ref: containerRef, isInView } = useInView({ rootMargin: '300px 0px', triggerOnce: true });
+
   const [candidateIndex, setCandidateIndex] = useState<number>(0);
   const [imageLoaded, setImageLoaded] = useState<boolean>(false);
   const [isPlayingVideo, setIsPlayingVideo] = useState<boolean>(false);
   const [resolvedImageUrl, setResolvedImageUrl] = useState<string | null>(null);
   const imgRef = React.useRef<HTMLImageElement>(null);
 
-  // If no image candidates exist upfront, dynamically resolve the REAL OpenGraph image from the publisher URL
+  // If no image candidates exist upfront, dynamically resolve the REAL OpenGraph image from the publisher URL lazily
   useEffect(() => {
-    if (imageCandidates.length > 0 || !articleUrl || !articleUrl.startsWith('http')) return;
+    if (!isInView || imageCandidates.length > 0 || !articleUrl || !articleUrl.startsWith('http')) return;
+
+    const cleanUrl = articleUrl.trim();
+    if (clientResolvedMediaCache.has(cleanUrl)) {
+      const cached = clientResolvedMediaCache.get(cleanUrl);
+      if (cached) setResolvedImageUrl(cached);
+      return;
+    }
+
     let active = true;
-    const resolveUrl = `/api/v1/media/resolve?url=${encodeURIComponent(articleUrl)}&title=${encodeURIComponent(title || '')}`;
-    fetch(resolveUrl)
-      .then(res => res.json())
-      .then(data => {
-        if (active && data.success && data.imageUrl && !data.imageUrl.startsWith('/assets/editorial/')) {
-          let clean = data.imageUrl;
-          if (clean.startsWith('http://')) clean = clean.replace('http://', 'https://');
-          setResolvedImageUrl(clean);
-        }
-      })
-      .catch(() => {});
+    let inFlight = clientInFlightResolutions.get(cleanUrl);
+    if (!inFlight) {
+      const resolveUrl = `/api/v1/media/resolve?url=${encodeURIComponent(cleanUrl)}&title=${encodeURIComponent(title || '')}`;
+      inFlight = fetch(resolveUrl)
+        .then(res => res.json())
+        .then(data => {
+          const img = (data.success && data.imageUrl && !data.imageUrl.startsWith('/assets/editorial/')) ? data.imageUrl : null;
+          clientResolvedMediaCache.set(cleanUrl, img);
+          clientInFlightResolutions.delete(cleanUrl);
+          return img;
+        })
+        .catch(() => {
+          clientResolvedMediaCache.set(cleanUrl, null);
+          clientInFlightResolutions.delete(cleanUrl);
+          return null;
+        });
+      clientInFlightResolutions.set(cleanUrl, inFlight);
+    }
+
+    inFlight.then(img => {
+      if (active && img) {
+        let clean = img;
+        if (clean.startsWith('http://')) clean = clean.replace('http://', 'https://');
+        setResolvedImageUrl(clean);
+      }
+    });
+
     return () => { active = false; };
-  }, [articleUrl, imageCandidates.length, title]);
+  }, [isInView, articleUrl, imageCandidates.length, title]);
 
   // Reset state when input candidates change
   useEffect(() => {
@@ -273,6 +303,18 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
   } else if (sourceId === 'fastcompany_ai') {
     badgeLabel = 'Fast Company';
     badgeColor = 'bg-rose-950/80 text-rose-300 border border-rose-500/30';
+  }
+
+  // Defer all rendering and asset loading until element enters or approaches viewport
+  if (!isInView) {
+    return (
+      <div
+        ref={containerRef}
+        className={`relative w-full overflow-hidden rounded-xs bg-stone-100 ${aspectClass} ${className}`}
+      >
+        <div className="absolute inset-0 bg-stone-200/40 animate-pulse" />
+      </div>
+    );
   }
 
   // 1. Video Asset Rendering (Interactive YouTube / DailyMotion / HTML5 player)
@@ -490,7 +532,10 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
   if (!displaySrc) return null;
 
   return (
-    <div className={`group/media relative w-full overflow-hidden rounded-xs bg-stone-100 border-0 ${aspectClass} ${className}`}>
+    <div
+      ref={containerRef}
+      className={`group/media relative w-full overflow-hidden rounded-xs bg-stone-100 border-0 ${aspectClass} ${className}`}
+    >
       <img
         ref={imgRef}
         src={displaySrc}
@@ -502,8 +547,13 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
         height="360"
         onLoad={handleImageLoad}
         onError={handleImageError}
-        className="h-full w-full object-cover transform-gpu transition-transform duration-300 group-hover/media:scale-[1.015]"
+        className={`h-full w-full object-cover transform-gpu transition-all duration-300 group-hover/media:scale-[1.015] ${
+          imageLoaded ? 'opacity-100' : 'opacity-0'
+        }`}
       />
+      {!imageLoaded && (
+        <div className="absolute inset-0 bg-stone-200/40 animate-pulse pointer-events-none" />
+      )}
     </div>
   );
 };

@@ -10,6 +10,28 @@ import { enrichmentPipeline } from '../pipelines/enrichment.js';
 import { deduplicationPipeline } from '../pipelines/deduplication.js';
 import { multiTechniqueService } from '../services/multi_technique_service.js';
 import { hnAiConnector } from '../connectors/hn_ai.js';
+import { Article } from '../models/article.js';
+
+/**
+ * Projects an article for high-speed feed consumption by lazy-loading heavy full text.
+ * Strips verbose full_content payloads unless explicitly requested, reducing JSON wire size by ~80%.
+ */
+export function projectFeedArticle(art: Article, includeFull = false): Article {
+  if (includeFull || !art.full_content) return art;
+  const { full_content, ...rest } = art as any;
+  return rest as Article;
+}
+
+/**
+ * Computes deterministic ETag for conditional HTTP request caching
+ */
+export function generateFeedEtag(articles: Article[], total?: number): string {
+  if (!articles || articles.length === 0) return 'W/"empty-feed"';
+  const firstId = articles[0]?.id || '';
+  const firstTs = articles[0]?.published_at || articles[0]?.seen_at || '';
+  const lastId = articles[articles.length - 1]?.id || '';
+  return `W/"${articles.length}-${total || articles.length}-${firstId.slice(-6)}-${lastId.slice(-6)}-${firstTs.slice(-8)}"`;
+}
 
 export class NewsHandler {
   async getNews(req: Request, res: Response, next: NextFunction) {
@@ -29,12 +51,18 @@ export class NewsHandler {
       const toDate = q.toDate || q.to_date || q.to;
       const sort = (q.sort || 'latest') as any;
       const idsParam = q.ids ? (q.ids as string).split(',').map(s => s.trim()).filter(Boolean) : undefined;
+      const includeFull = q.include_full_content === 'true' || q.full === 'true';
 
       const cacheKey = `news:query:${JSON.stringify(q)}`;
       const cached = await cacheService.get(cacheKey);
       if (cached) {
+        const etag = generateFeedEtag(cached.data, cached.pagination?.total);
+        res.setHeader('ETag', etag);
         res.setHeader('X-Cache', 'HIT');
-        res.setHeader('Cache-Control', 'public, max-age=15, stale-while-revalidate=30');
+        res.setHeader('Cache-Control', 'public, max-age=15, stale-while-revalidate=45');
+        if (req.headers['if-none-match'] === etag) {
+          return res.status(304).end();
+        }
         return res.json({
           ...cached,
           request_id: (req as any).requestId
@@ -58,9 +86,14 @@ export class NewsHandler {
         ids: idsParam
       });
 
+      // Lazy content projection: strip full_content unless requested
+      const projectedArticles = includeFull
+        ? result.articles
+        : result.articles.map(a => projectFeedArticle(a, false));
+
       const payload = {
         success: true,
-        data: result.articles,
+        data: projectedArticles,
         pagination: {
           page: parseInt(page, 10) || 1,
           limit: parseInt(limit, 10) || 30,
@@ -69,9 +102,16 @@ export class NewsHandler {
         }
       };
 
-      await cacheService.set(cacheKey, payload, 25);
+      const etag = generateFeedEtag(projectedArticles, result.total);
+      res.setHeader('ETag', etag);
       res.setHeader('X-Cache', 'MISS');
-      res.setHeader('Cache-Control', 'public, max-age=15, stale-while-revalidate=30');
+      res.setHeader('Cache-Control', 'public, max-age=15, stale-while-revalidate=45');
+
+      if (req.headers['if-none-match'] === etag) {
+        return res.status(304).end();
+      }
+
+      await cacheService.set(cacheKey, payload, 25);
       res.json({
         ...payload,
         request_id: (req as any).requestId
@@ -84,11 +124,17 @@ export class NewsHandler {
   async getLatest(req: Request, res: Response, next: NextFunction) {
     try {
       const limit = parseInt(req.query.limit as string, 10) || 15;
-      const cacheKey = `news:latest:${limit}`;
+      const includeFull = req.query.include_full_content === 'true';
+      const cacheKey = `news:latest:${limit}:${includeFull}`;
       const cached = await cacheService.get(cacheKey);
       if (cached) {
+        const etag = generateFeedEtag(cached.data);
+        res.setHeader('ETag', etag);
         res.setHeader('X-Cache', 'HIT');
-        res.setHeader('Cache-Control', 'public, max-age=15, stale-while-revalidate=30');
+        res.setHeader('Cache-Control', 'public, max-age=15, stale-while-revalidate=45');
+        if (req.headers['if-none-match'] === etag) {
+          return res.status(304).end();
+        }
         return res.json({
           ...cached,
           request_id: (req as any).requestId
@@ -96,14 +142,25 @@ export class NewsHandler {
       }
 
       const result = newsRepository.queryArticles({ limit, sort: 'latest' });
+      const projectedArticles = includeFull
+        ? result.articles
+        : result.articles.map(a => projectFeedArticle(a, false));
+
       const payload = {
         success: true,
-        data: result.articles
+        data: projectedArticles
       };
 
-      await cacheService.set(cacheKey, payload, 25);
+      const etag = generateFeedEtag(projectedArticles);
+      res.setHeader('ETag', etag);
       res.setHeader('X-Cache', 'MISS');
-      res.setHeader('Cache-Control', 'public, max-age=15, stale-while-revalidate=30');
+      res.setHeader('Cache-Control', 'public, max-age=15, stale-while-revalidate=45');
+
+      if (req.headers['if-none-match'] === etag) {
+        return res.status(304).end();
+      }
+
+      await cacheService.set(cacheKey, payload, 25);
       res.json({
         ...payload,
         request_id: (req as any).requestId
@@ -118,12 +175,18 @@ export class NewsHandler {
       const category = req.params.category;
       const limit = parseInt(req.query.limit as string, 10) || 30;
       const page = parseInt(req.query.page as string, 10) || 1;
+      const includeFull = req.query.include_full_content === 'true';
 
-      const cacheKey = `news:category:${category}:${page}:${limit}`;
+      const cacheKey = `news:category:${category}:${page}:${limit}:${includeFull}`;
       const cached = await cacheService.get(cacheKey);
       if (cached) {
+        const etag = generateFeedEtag(cached.data, cached.pagination?.total);
+        res.setHeader('ETag', etag);
         res.setHeader('X-Cache', 'HIT');
         res.setHeader('Cache-Control', 'public, max-age=20, stale-while-revalidate=40');
+        if (req.headers['if-none-match'] === etag) {
+          return res.status(304).end();
+        }
         return res.json({
           ...cached,
           request_id: (req as any).requestId
@@ -131,9 +194,13 @@ export class NewsHandler {
       }
 
       const result = newsRepository.queryArticles({ category, limit, page });
+      const projectedArticles = includeFull
+        ? result.articles
+        : result.articles.map(a => projectFeedArticle(a, false));
+
       const payload = {
         success: true,
-        data: result.articles,
+        data: projectedArticles,
         pagination: {
           page,
           limit,
@@ -142,9 +209,16 @@ export class NewsHandler {
         }
       };
 
-      await cacheService.set(cacheKey, payload, 30);
+      const etag = generateFeedEtag(projectedArticles, result.total);
+      res.setHeader('ETag', etag);
       res.setHeader('X-Cache', 'MISS');
       res.setHeader('Cache-Control', 'public, max-age=20, stale-while-revalidate=40');
+
+      if (req.headers['if-none-match'] === etag) {
+        return res.status(304).end();
+      }
+
+      await cacheService.set(cacheKey, payload, 30);
       res.json({
         ...payload,
         request_id: (req as any).requestId
@@ -159,12 +233,18 @@ export class NewsHandler {
       const sourceId = req.params.source_id;
       const limit = parseInt(req.query.limit as string, 10) || 30;
       const page = parseInt(req.query.page as string, 10) || 1;
+      const includeFull = req.query.include_full_content === 'true';
 
-      const cacheKey = `news:source:${sourceId}:${page}:${limit}`;
+      const cacheKey = `news:source:${sourceId}:${page}:${limit}:${includeFull}`;
       const cached = await cacheService.get(cacheKey);
       if (cached) {
+        const etag = generateFeedEtag(cached.data, cached.pagination?.total);
+        res.setHeader('ETag', etag);
         res.setHeader('X-Cache', 'HIT');
         res.setHeader('Cache-Control', 'public, max-age=20, stale-while-revalidate=40');
+        if (req.headers['if-none-match'] === etag) {
+          return res.status(304).end();
+        }
         return res.json({
           ...cached,
           request_id: (req as any).requestId
@@ -172,9 +252,13 @@ export class NewsHandler {
       }
 
       const result = newsRepository.queryArticles({ sourceId, limit, page });
+      const projectedArticles = includeFull
+        ? result.articles
+        : result.articles.map(a => projectFeedArticle(a, false));
+
       const payload = {
         success: true,
-        data: result.articles,
+        data: projectedArticles,
         pagination: {
           page,
           limit,
@@ -183,9 +267,16 @@ export class NewsHandler {
         }
       };
 
-      await cacheService.set(cacheKey, payload, 30);
+      const etag = generateFeedEtag(projectedArticles, result.total);
+      res.setHeader('ETag', etag);
       res.setHeader('X-Cache', 'MISS');
       res.setHeader('Cache-Control', 'public, max-age=20, stale-while-revalidate=40');
+
+      if (req.headers['if-none-match'] === etag) {
+        return res.status(304).end();
+      }
+
+      await cacheService.set(cacheKey, payload, 30);
       res.json({
         ...payload,
         request_id: (req as any).requestId

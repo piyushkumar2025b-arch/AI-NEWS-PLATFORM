@@ -40,6 +40,13 @@ export class MediaHandler {
   private httpAgent: http.Agent;
   private httpsAgent: https.Agent;
 
+  // SingleFlight map to deduplicate in-flight media resolution requests across concurrent clients
+  private inFlightResolutions: Map<string, Promise<{ imageUrl: string | null }>> = new Map();
+  // In-memory fast cache for resolved media URLs
+  private resolvedUrlCache: Map<string, { imageUrl: string | null; expiresAt: number }> = new Map();
+  private maxResolvedCacheEntries = 1000;
+  private resolvedTtlMs = 1000 * 60 * 60 * 24; // 24 hours
+
   constructor() {
     this.httpAgent = new http.Agent({
       keepAlive: true,
@@ -56,7 +63,47 @@ export class MediaHandler {
   }
 
   /**
-   * Dynamically resolves genuine OpenGraph/publisher media for an article on-demand.
+   * Internal deduplicated resolver using SingleFlight pattern
+   */
+  private async executeDeduplicatedResolution(rawUrl: string, title?: string): Promise<{ imageUrl: string | null }> {
+    const cacheKey = rawUrl.trim();
+    const cached = this.resolvedUrlCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return { imageUrl: cached.imageUrl };
+    }
+
+    // Check if an existing resolution for this exact URL is already in-flight
+    const inFlight = this.inFlightResolutions.get(cacheKey);
+    if (inFlight) {
+      return inFlight;
+    }
+
+    const promise = (async () => {
+      try {
+        const resolved = await mediaResolver.resolveMedia(rawUrl, title);
+        const imageUrl = resolved?.imageUrl || null;
+        if (this.resolvedUrlCache.size >= this.maxResolvedCacheEntries) {
+          const firstKey = this.resolvedUrlCache.keys().next().value;
+          if (firstKey) this.resolvedUrlCache.delete(firstKey);
+        }
+        this.resolvedUrlCache.set(cacheKey, {
+          imageUrl,
+          expiresAt: Date.now() + (imageUrl ? this.resolvedTtlMs : 60000) // 1m for negative
+        });
+        return { imageUrl };
+      } catch {
+        return { imageUrl: null };
+      } finally {
+        this.inFlightResolutions.delete(cacheKey);
+      }
+    })();
+
+    this.inFlightResolutions.set(cacheKey, promise);
+    return promise;
+  }
+
+  /**
+   * Dynamically resolves genuine OpenGraph/publisher media for an article on-demand with SingleFlight deduplication.
    */
   public async resolveArticleMedia(req: any, res: any) {
     const rawUrl = req.query.url as string;
@@ -68,8 +115,10 @@ export class MediaHandler {
     }
 
     try {
-      const resolved = await mediaResolver.resolveMedia(rawUrl, title);
-      if (resolved?.imageUrl) {
+      const resolved = await this.executeDeduplicatedResolution(rawUrl, title);
+      res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+      
+      if (resolved.imageUrl) {
         if (articleId) {
           const { newsRepository } = await import('../database/repository.js');
           const art = newsRepository.getArticleById(articleId);
@@ -91,6 +140,45 @@ export class MediaHandler {
       return res.json({ success: false, imageUrl: null });
     } catch {
       return res.json({ success: false, imageUrl: null });
+    }
+  }
+
+  /**
+   * Batch resolves genuine OpenGraph media for multiple URLs in a single request.
+   */
+  public async resolveBatch(req: any, res: any) {
+    try {
+      const items: Array<{ url: string; title?: string; articleId?: string }> = Array.isArray(req.body?.items)
+        ? req.body.items
+        : Array.isArray(req.body?.urls)
+        ? req.body.urls.map((u: string) => ({ url: u }))
+        : [];
+
+      if (!items.length) {
+        return res.json({ success: true, results: {} });
+      }
+
+      const results: Record<string, string | null> = {};
+      const concurrency = 5;
+      for (let i = 0; i < items.length; i += concurrency) {
+        const chunk = items.slice(i, i + concurrency);
+        await Promise.allSettled(
+          chunk.map(async (item) => {
+            if (!item.url) return;
+            const res = await this.executeDeduplicatedResolution(item.url, item.title);
+            results[item.url] = res.imageUrl;
+          })
+        );
+      }
+
+      res.setHeader('Cache-Control', 'public, max-age=3600, stale-while-revalidate=86400');
+      res.json({
+        success: true,
+        results,
+        count: Object.keys(results).length
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
     }
   }
 

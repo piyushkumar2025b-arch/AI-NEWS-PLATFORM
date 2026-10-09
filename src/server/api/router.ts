@@ -30,6 +30,7 @@ apiRouter.get("/articles/:id/full", (req, res, next) => newsHandler.getFullArtic
 
 // Media APIs
 apiRouter.get("/media/resolve", (req, res) => mediaHandler.resolveArticleMedia(req, res));
+apiRouter.post("/media/resolve-batch", (req, res) => mediaHandler.resolveBatch(req, res));
 apiRouter.get("/media/proxy", (req, res, next) => mediaHandler.proxyImage(req, res, next));
 apiRouter.get("/media/card", (req, res) => mediaHandler.renderCard(req, res));
 

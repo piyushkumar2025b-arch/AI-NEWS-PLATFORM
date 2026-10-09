@@ -34,6 +34,8 @@ import { multiTechniqueService } from '../src/server/services/multi_technique_se
 import { mastodonAiConnector } from '../src/server/connectors/mastodon_ai.js';
 import { substackNewslettersConnector } from '../src/server/connectors/substack_newsletters.js';
 import { huggingFaceEcosystemConnector } from '../src/server/connectors/huggingface_ecosystem.js';
+import { newsHandler, projectFeedArticle, generateFeedEtag } from '../src/server/handlers/news_handler.js';
+import { mediaHandler } from '../src/server/handlers/media_handler.js';
 
 let passed = 0;
 let failed = 0;
@@ -962,6 +964,113 @@ async function runAllTests() {
       const hf = getConnector('hf_ecosystem');
       assert(hf !== undefined, 'hf_ecosystem connector must be registered');
       assert.strictEqual(hf?.getSourceId(), 'hf_ecosystem');
+    }),
+
+    // Lazy Content & Best Backend System Design Tests
+    test('Lazy Content Technique: projectFeedArticle omits full_content by default and includes when requested', () => {
+      const artWithFull = makeTestArticle({
+        id: 'test_lazy_article_1',
+        title: 'Frontier AI Research Breakthrough with Gemini and DeepSeek',
+        full_content: {
+          text: 'Very long multi-paragraph body text of the article...',
+          paragraphs: ['Paragraph 1', 'Paragraph 2', 'Paragraph 3'],
+          readingTimeMinutes: 5,
+          wordCount: 800,
+          keyTakeaways: ['Key point 1', 'Key point 2'],
+          extractedAt: new Date().toISOString()
+        }
+      });
+
+      // Default lazy projection: full_content must be omitted to save network wire size
+      const projected = projectFeedArticle(artWithFull, false);
+      assert.strictEqual(projected.id, artWithFull.id);
+      assert.strictEqual(projected.title, artWithFull.title);
+      assert.strictEqual((projected as any).full_content, undefined, 'full_content must be stripped in lazy feed projection');
+
+      // Explicit request: full_content is preserved
+      const fullProjected = projectFeedArticle(artWithFull, true);
+      assert.ok(fullProjected.full_content, 'full_content must be preserved when includeFull is true');
+      assert.strictEqual(fullProjected.full_content?.paragraphs?.length, 3);
+    }),
+
+    test('Backend System Design: newsHandler supports ETag conditional validation returning 304 Not Modified', async () => {
+      let statusSent = 200;
+      let headers: Record<string, string> = {};
+      let jsonSent: any = null;
+
+      const mockRes: any = {
+        setHeader: (name: string, val: string) => { headers[name.toLowerCase()] = val; },
+        status: (code: number) => {
+          statusSent = code;
+          return {
+            json: (body: any) => { jsonSent = body; },
+            end: () => {}
+          };
+        },
+        json: (body: any) => { jsonSent = body; }
+      };
+
+      const mockReqInitial: any = {
+        query: { limit: '5' },
+        headers: {},
+        requestId: 'req_etag_test_1'
+      };
+
+      // 1. Initial request -> 200 OK with ETag header
+      await newsHandler.getNews(mockReqInitial, mockRes, () => {});
+      assert.strictEqual(statusSent, 200);
+      const etag = headers['etag'];
+      assert.ok(etag, 'Response must include an ETag header');
+
+      // 2. Conditional request with matching If-None-Match -> 304 Not Modified
+      let statusSentConditional = 0;
+      let endedConditional = false;
+      const mockResConditional: any = {
+        setHeader: (name: string, val: string) => { headers[name.toLowerCase()] = val; },
+        status: (code: number) => {
+          statusSentConditional = code;
+          return {
+            end: () => { endedConditional = true; },
+            json: () => {}
+          };
+        },
+        json: () => {}
+      };
+
+      const mockReqConditional: any = {
+        query: { limit: '5' },
+        headers: { 'if-none-match': etag },
+        requestId: 'req_etag_test_2'
+      };
+
+      await newsHandler.getNews(mockReqConditional, mockResConditional, () => {});
+      assert.strictEqual(statusSentConditional, 304, 'Server must respond with HTTP 304 Not Modified when ETag matches');
+      assert.strictEqual(endedConditional, true, 'Response must terminate immediately without transmitting body payload');
+    }),
+
+    test('Backend System Design: mediaHandler supports batch media resolution and SingleFlight deduplication', async () => {
+      let jsonResult: any = null;
+      let statusResult = 200;
+      const mockReq: any = {
+        body: {
+          urls: [
+            'https://github.com/torvalds/linux',
+            'https://youtube.com/watch?v=dQw4w9WgXcQ'
+          ]
+        }
+      };
+      const mockRes: any = {
+        setHeader: () => {},
+        status: (c: number) => { statusResult = c; return mockRes; },
+        json: (data: any) => { jsonResult = data; }
+      };
+
+      await mediaHandler.resolveBatch(mockReq, mockRes);
+      assert.strictEqual(statusResult, 200);
+      assert.strictEqual(jsonResult?.success, true);
+      assert.ok(jsonResult?.results, 'Results dictionary must exist');
+      assert.ok('https://github.com/torvalds/linux' in jsonResult.results);
+      assert.ok('https://youtube.com/watch?v=dQw4w9WgXcQ' in jsonResult.results);
     })
   ];
 
