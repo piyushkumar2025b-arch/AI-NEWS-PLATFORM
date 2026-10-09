@@ -12,6 +12,9 @@ import {
 import { Article, ExtractedContent } from '../types.js';
 import { MediaRenderer } from './MediaRenderer.js';
 
+// Client-side cache to make reopening articles instantaneous (0ms latency)
+const fullContentCache = new Map<string, ExtractedContent>();
+
 interface ArticleModalProps {
   article: Article | null;
   onClose: () => void;
@@ -59,6 +62,12 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
 
     if (article.full_content && article.full_content.paragraphs && article.full_content.paragraphs.length > 0) {
       setFullContent(article.full_content);
+      fullContentCache.set(article.id, article.full_content);
+      return;
+    }
+
+    if (fullContentCache.has(article.id)) {
+      setFullContent(fullContentCache.get(article.id)!);
       return;
     }
 
@@ -71,9 +80,10 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
         const json = await res.json();
         if (json.success && json.data?.full_content) {
           setFullContent(json.data.full_content);
+          fullContentCache.set(article.id, json.data.full_content);
         } else {
           // Fallback to synthesized content from description
-          setFullContent({
+          const synthesized: ExtractedContent = {
             text: article.description || article.title,
             paragraphs: [
               article.description || 'Full coverage and extended discussion available at the original source.'
@@ -83,11 +93,13 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
             keyTakeaways: [article.title],
             extractedAt: new Date().toISOString(),
             extractionMethod: 'summary_synthesis'
-          });
+          };
+          setFullContent(synthesized);
+          fullContentCache.set(article.id, synthesized);
         }
       } catch {
         // Fallback
-        setFullContent({
+        const fallback: ExtractedContent = {
           text: article.description || article.title,
           paragraphs: [article.description || 'Full coverage available at the original publisher.'],
           readingTimeMinutes: 2,
@@ -95,7 +107,9 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
           keyTakeaways: [article.title],
           extractedAt: new Date().toISOString(),
           extractionMethod: 'summary_synthesis'
-        });
+        };
+        setFullContent(fallback);
+        fullContentCache.set(article.id, fallback);
       } finally {
         setLoadingContent(false);
       }

@@ -127,8 +127,16 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
       }
     }
 
+    // 5. Authentic editorial photography fallback to guarantee no empty layout collapse
+    if (showEditorialFallback) {
+      const fallback = getEditorialImage(title, category, sourceId, domain);
+      if (fallback && !candidates.includes(fallback)) {
+        candidates.push(fallback);
+      }
+    }
+
     return candidates;
-  }, [ytVideoId, imageAsset?.url, fallbackImageUrl, media, articleUrl]);
+  }, [ytVideoId, imageAsset?.url, fallbackImageUrl, media, articleUrl, showEditorialFallback, title, category, sourceId, domain]);
 
   const { ref: containerRef, isInView } = useInView({ rootMargin: '300px 0px', triggerOnce: true });
 
@@ -303,18 +311,6 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
   } else if (sourceId === 'fastcompany_ai') {
     badgeLabel = 'Fast Company';
     badgeColor = 'bg-rose-950/80 text-rose-300 border border-rose-500/30';
-  }
-
-  // Defer all rendering and asset loading until element enters or approaches viewport
-  if (!isInView) {
-    return (
-      <div
-        ref={containerRef}
-        className={`relative w-full overflow-hidden rounded-xs bg-stone-100 ${aspectClass} ${className}`}
-      >
-        <div className="absolute inset-0 bg-stone-200/40 animate-pulse" />
-      </div>
-    );
   }
 
   // 1. Video Asset Rendering (Interactive YouTube / DailyMotion / HTML5 player)
@@ -529,7 +525,8 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
   }
 
   // 4. Primary Image Rendering
-  if (!displaySrc) return null;
+  const finalImageSrc = displaySrc || (showEditorialFallback ? getEditorialImage(title, category, sourceId, domain) : null);
+  if (!finalImageSrc) return null;
 
   return (
     <div
@@ -538,7 +535,7 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
     >
       <img
         ref={imgRef}
-        src={displaySrc}
+        src={finalImageSrc}
         alt={title || 'Article visual'}
         referrerPolicy="no-referrer"
         loading="lazy"

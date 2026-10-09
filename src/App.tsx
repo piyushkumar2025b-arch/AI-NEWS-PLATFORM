@@ -106,6 +106,8 @@ export default function App() {
   }, []);
 
   // Fetch articles from backend API
+  const savedTabKey = activeTab === 'saved' ? Array.from(savedIds).sort().join(',') : '';
+
   const fetchArticles = useCallback(async () => {
     try {
       setLoading(true);
@@ -152,7 +154,7 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  }, [activeTab, selectedSource, selectedTopicTag, savedIds]);
+  }, [activeTab, selectedSource, selectedTopicTag, savedTabKey]);
 
   // Live on-demand background refresh from external feeds across multiple techniques
   const handleLiveRefresh = useCallback(async () => {
@@ -190,28 +192,36 @@ export default function App() {
     }
   }, [fetchArticles, searchQuery]);
 
-  // Live full-corpus search across all dispatches
+  // Live full-corpus search across all dispatches with in-flight cancellation
   useEffect(() => {
     const q = searchQuery.trim();
     if (!q) return;
 
+    const controller = new AbortController();
     const timer = setTimeout(async () => {
       try {
         setLoading(true);
-        const res = await fetch(`/api/v1/search?q=${encodeURIComponent(q)}&limit=60`);
+        const res = await fetch(`/api/v1/search?q=${encodeURIComponent(q)}&limit=60`, {
+          signal: controller.signal
+        });
         if (res.ok) {
           const json = await res.json();
           const list: Article[] = Array.isArray(json.data) ? json.data : [];
           setArticles(list);
         }
-      } catch (err) {
-        console.error('Search error:', err);
+      } catch (err: any) {
+        if (err.name !== 'AbortError') {
+          console.error('Search error:', err);
+        }
       } finally {
         setLoading(false);
       }
     }, 280);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
   }, [searchQuery]);
 
   // Reset pagination when tab or search changes
