@@ -52,12 +52,17 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
 
   // Auto-fetch full article text if not present
   useEffect(() => {
-    if (!article) return;
+    if (!article) {
+      setFullContent(null);
+      return;
+    }
 
     if (article.full_content && article.full_content.paragraphs && article.full_content.paragraphs.length > 0) {
       setFullContent(article.full_content);
       return;
     }
+
+    setFullContent(null);
 
     const fetchFull = async () => {
       try {

@@ -913,6 +913,41 @@ async function runAllTests() {
       assert(techIds.has('mastodon_firehose'), 'Must include mastodon_firehose');
       assert(techIds.has('tier1_tech_wire'), 'Must include tier1_tech_wire');
       assert(techIds.has('structured_web_extractor'), 'Must include structured_web_extractor');
+      assert(techIds.has('reddit_communities'), 'Must include reddit_communities');
+      assert(techIds.has('openalex_research'), 'Must include openalex_research');
+    }),
+
+    test('Techniques Engine: runSpecificTechnique handles structured_web_extractor gracefully', async () => {
+      const result = await multiTechniqueService.runSpecificTechnique('structured_web_extractor');
+      assert.strictEqual(result.techniqueId, 'structured_web_extractor');
+      assert.strictEqual(result.success, true, 'structured_web_extractor must return success: true');
+    }),
+
+    test('Regression: sort: "latest" strictly sorts articles in descending timestamp order', () => {
+      const art1 = makeTestArticle({
+        id: 'test_sort_newer',
+        title: 'Newer Article Published Just Now',
+        published_at: '2026-10-09T12:00:00Z',
+        source_id: 'techcrunch_ai'
+      });
+      const art2 = makeTestArticle({
+        id: 'test_sort_older',
+        title: 'Older Article Published Days Ago',
+        published_at: '2026-10-05T12:00:00Z',
+        source_id: 'hackernews'
+      });
+      newsRepository.upsertArticle(art2);
+      newsRepository.upsertArticle(art1);
+
+      const res = newsRepository.queryArticles({ sort: 'latest', limit: 20 });
+      assert.ok(res.articles.length >= 2);
+      for (let i = 1; i < res.articles.length; i++) {
+        const prevTime = new Date(res.articles[i - 1].published_at || '').getTime();
+        const currTime = new Date(res.articles[i].published_at || '').getTime();
+        if (!isNaN(prevTime) && !isNaN(currTime)) {
+          assert.ok(prevTime >= currTime, `Article at index ${i - 1} (${prevTime}) must be >= index ${i} (${currTime})`);
+        }
+      }
     }),
 
     test('Connectors Registry: New specialized techniques connectors are registered', () => {

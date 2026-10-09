@@ -763,8 +763,8 @@ export class NewsRepository {
 
     let resultList = filtered;
 
-    // Diversify multi-source feeds
-    if (!options.sourceId && filtered.length > 2 && !hasQuery) {
+    // Diversify multi-source feeds when in default magazine view (not explicit latest sort)
+    if (!options.sourceId && filtered.length > 2 && !hasQuery && options.sort !== 'latest' && options.sort !== 'newest') {
       const bySource = new Map<string, Article[]>();
       for (let i = 0; i < filtered.length; i++) {
         const art = filtered[i];
@@ -801,7 +801,7 @@ export class NewsRepository {
         if (scoreB !== scoreA) return scoreB - scoreA;
         return this.getTimestamp(b) - this.getTimestamp(a);
       });
-    } else if (!isDefaultSort) {
+    } else if (options.sort === 'latest' || options.sort === 'newest') {
       resultList.sort((a, b) => this.getTimestamp(b) - this.getTimestamp(a));
     }
 

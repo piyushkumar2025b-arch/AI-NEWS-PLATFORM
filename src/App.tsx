@@ -34,12 +34,8 @@ export default function App() {
   const [selectedSource, setSelectedSource] = useState<string | null>(null);
   const [selectedTopicTag, setSelectedTopicTag] = useState<string | null>(null);
 
-  // Discovery Modal states
+  // Discovery Modal state
   const [showDiscoveryModal, setShowDiscoveryModal] = useState<boolean>(false);
-  const [discoverQuery, setDiscoverQuery] = useState<string>('');
-  const [discoverUrl, setDiscoverUrl] = useState<string>('');
-  const [isDiscovering, setIsDiscovering] = useState<boolean>(false);
-  const [discoveryStatus, setDiscoveryStatus] = useState<string | null>(null);
 
   // Data states
   const [articles, setArticles] = useState<Article[]>([]);
@@ -151,47 +147,6 @@ export default function App() {
       setLoading(false);
     }
   }, [activeTab, selectedSource, selectedTopicTag, savedIds]);
-
-  // Topic & Web URL Discovery handler
-  const handleDiscover = useCallback(async (queryText?: string, targetUrl?: string) => {
-    const q = (queryText !== undefined ? queryText : discoverQuery).trim();
-    const u = (targetUrl !== undefined ? targetUrl : discoverUrl).trim();
-    if (!q && !u) return;
-
-    try {
-      setIsDiscovering(true);
-      setDiscoveryStatus(q ? `Scanning web wire & research preprints for "${q}"...` : `Discovering feed & extracting article from ${u}...`);
-      const res = await fetch('/api/v1/news/discover', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic: q || undefined, url: u || undefined })
-      });
-
-      if (res.ok) {
-        const json = await res.json();
-        if (Array.isArray(json.data) && json.data.length > 0) {
-          setArticles(json.data);
-          setDiscoveryStatus(`Success! Ingested ${json.ingestedCount || 0} new items. Displaying ${json.data.length} dispatches.`);
-        } else {
-          setDiscoveryStatus('Discovery completed. Re-checking feed.');
-          await fetchArticles();
-        }
-      } else {
-        setDiscoveryStatus('Discovery note: Unable to fetch external items, refreshed local index.');
-        await fetchArticles();
-      }
-    } catch (e: any) {
-      console.error('Discovery error:', e);
-      setDiscoveryStatus('Discovery completed with warnings.');
-      await fetchArticles();
-    } finally {
-      setIsDiscovering(false);
-      setTimeout(() => {
-        setShowDiscoveryModal(false);
-        setDiscoveryStatus(null);
-      }, 2500);
-    }
-  }, [discoverQuery, discoverUrl, fetchArticles]);
 
   // Live on-demand background refresh from external feeds across multiple techniques
   const handleLiveRefresh = useCallback(async () => {

@@ -213,6 +213,8 @@ export function TechniquesRadarModal({
         return <MessageSquare className="h-4 w-4 text-indigo-600" />;
       case 'structured_extraction':
         return <FileCode className="h-4 w-4 text-rose-600" />;
+      case 'scholarly_api':
+        return <BookOpen className="h-4 w-4 text-cyan-600" />;
       default:
         return <Zap className="h-4 w-4 text-stone-600" />;
     }

@@ -497,8 +497,23 @@ export class NewsHandler {
   async runTechnique(req: Request, res: Response, next: NextFunction) {
     try {
       const techniqueId = req.params.technique_id;
-      const result = await multiTechniqueService.runSpecificTechnique(techniqueId);
+      const { targetUrl, query: customQuery } = req.body || {};
+      const result = await multiTechniqueService.runSpecificTechnique(techniqueId, {
+        targetUrl,
+        query: customQuery
+      });
       
+      if (!result.success && result.error?.startsWith('Unknown technique')) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_TECHNIQUE',
+            message: result.error
+          },
+          request_id: (req as any).requestId
+        });
+      }
+
       const query = newsRepository.queryArticles({ limit: 40, sort: 'latest' });
       res.json({
         success: result.success,

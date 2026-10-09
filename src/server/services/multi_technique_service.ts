@@ -12,6 +12,7 @@ import { arxivNlpConnector, arxivCvConnector } from '../connectors/arxiv_special
 import { huggingFaceEcosystemConnector } from '../connectors/huggingface_ecosystem.js';
 import { substackNewslettersConnector } from '../connectors/substack_newsletters.js';
 import { mastodonAiConnector } from '../connectors/mastodon_ai.js';
+import { redditAiConnector } from '../connectors/reddit_ai.js';
 import { discoveryProtocol } from '../protocols/discovery.js';
 import { rssClient } from '../clients/rss_client.js';
 import { httpClient } from '../clients/http_client.js';
@@ -147,6 +148,28 @@ export class MultiTechniqueService {
         itemCount: (sourceCounts['devto'] || 0) + (sourceCounts['lobsters'] || 0),
         lastRunAt: this.lastRunTimestamps.get('developer_ecosystem') || null,
         status: 'active'
+      },
+      {
+        id: 'reddit_communities',
+        name: 'Reddit AI & ML Communities Stream',
+        description: 'Live community dispatches, upvoted breakthroughs, and discussions across r/MachineLearning, r/LocalLLaMA, r/singularity, r/OpenAI, and r/ArtificialIntelligence.',
+        category: 'community',
+        type: 'realtime_search',
+        speed: 'fast',
+        itemCount: sourceCounts['reddit_ai'] || 0,
+        lastRunAt: this.lastRunTimestamps.get('reddit_communities') || null,
+        status: 'active'
+      },
+      {
+        id: 'openalex_research',
+        name: 'OpenAlex Global Scholarly Works & Preprints',
+        description: 'Direct REST integration with OpenAlex indexing newest peer-reviewed publications and open-access AI research works.',
+        category: 'research',
+        type: 'scholarly_api',
+        speed: 'fast',
+        itemCount: sourceCounts['openalex'] || 0,
+        lastRunAt: this.lastRunTimestamps.get('openalex_research') || null,
+        status: 'active'
       }
     ];
   }
@@ -261,6 +284,48 @@ export class MultiTechniqueService {
           this.lastRunTimestamps.set('tier1_tech_wire', new Date().toISOString());
           return items;
         } catch { return []; }
+      })(),
+
+      // 9. Reddit AI & ML Communities
+      (async () => {
+        try {
+          const res = await redditAiConnector.fetch({ limit: 20, signal: options.signal });
+          techniquesExecuted.push('reddit_communities');
+          this.lastRunTimestamps.set('reddit_communities', new Date().toISOString());
+          return res.rawItems;
+        } catch { return []; }
+      })(),
+
+      // 10. OpenAlex Global Scholarly AI Preprints
+      (async () => {
+        try {
+          const res = await httpClient.get('https://api.openalex.org/works?filter=default.search:artificial%20intelligence&sort=publication_date:desc&per_page=12', {
+            sourceId: 'openalex',
+            timeoutMs: 5000,
+            signal: options.signal
+          });
+          const works = res.data?.results;
+          if (Array.isArray(works)) {
+            const items = works.map((w: any) => ({
+              title: w.title || 'Scholarly AI Research Publication',
+              url: w.primary_location?.landing_page_url || w.doi || w.id,
+              description: `Scholarly work published on ${w.publication_date || 'recently'}. Authors: ${(w.authorships || []).slice(0, 3).map((a: any) => a.author?.display_name).filter(Boolean).join(', ') || 'Research Collaborators'}. Cited by ${w.cited_by_count || 0} works.`,
+              sourceId: 'openalex',
+              sourceName: 'OpenAlex Scholarly',
+              publisherName: w.primary_location?.source?.display_name || 'Academic Open Access',
+              author: w.authorships?.[0]?.author?.display_name || 'Research Scholar',
+              publishedAt: w.publication_date ? new Date(w.publication_date).toISOString() : new Date().toISOString(),
+              category: 'research',
+              tags: ['scholarly', 'research', 'openalex', 'peer-reviewed'],
+              sourceType: 'research',
+              externalId: w.id ? String(w.id).replace('https://openalex.org/', '') : undefined
+            }));
+            techniquesExecuted.push('openalex_research');
+            this.lastRunTimestamps.set('openalex_research', new Date().toISOString());
+            return items;
+          }
+          return [];
+        } catch { return []; }
       })()
     ];
 
@@ -315,7 +380,10 @@ export class MultiTechniqueService {
   /**
    * Run a specific technique by ID
    */
-  async runSpecificTechnique(techniqueId: string, signal?: AbortSignal): Promise<{
+  async runSpecificTechnique(
+    techniqueId: string,
+    optionsOrSignal?: { signal?: AbortSignal; targetUrl?: string; query?: string } | AbortSignal
+  ): Promise<{
     success: boolean;
     techniqueId: string;
     received: number;
@@ -324,6 +392,9 @@ export class MultiTechniqueService {
     error?: string;
   }> {
     const startTime = Date.now();
+    const signal = optionsOrSignal instanceof AbortSignal ? optionsOrSignal : optionsOrSignal?.signal;
+    const targetUrl = !(optionsOrSignal instanceof AbortSignal) ? optionsOrSignal?.targetUrl : undefined;
+    const customQuery = !(optionsOrSignal instanceof AbortSignal) ? optionsOrSignal?.query : undefined;
     let rawItems: any[] = [];
 
     try {
@@ -408,6 +479,71 @@ export class MultiTechniqueService {
               sourceType: 'news',
               externalId: String(item.id)
             }));
+          }
+          break;
+        }
+        case 'reddit_communities': {
+          const res = await redditAiConnector.fetch({ limit: 25, signal });
+          rawItems = res.rawItems;
+          break;
+        }
+        case 'openalex_research': {
+          const searchParam = customQuery ? encodeURIComponent(customQuery) : 'artificial%20intelligence';
+          const res = await httpClient.get(`https://api.openalex.org/works?filter=default.search:${searchParam}&sort=publication_date:desc&per_page=15`, {
+            sourceId: 'openalex',
+            timeoutMs: 6000,
+            signal
+          });
+          const works = res.data?.results;
+          if (Array.isArray(works)) {
+            rawItems = works.map((w: any) => ({
+              title: w.title || 'Scholarly AI Research Publication',
+              url: w.primary_location?.landing_page_url || w.doi || w.id,
+              description: `Scholarly work published on ${w.publication_date || 'recently'}. Authors: ${(w.authorships || []).slice(0, 3).map((a: any) => a.author?.display_name).filter(Boolean).join(', ') || 'Research Collaborators'}. Cited by ${w.cited_by_count || 0} works.`,
+              sourceId: 'openalex',
+              sourceName: 'OpenAlex Scholarly',
+              publisherName: w.primary_location?.source?.display_name || 'Academic Open Access',
+              author: w.authorships?.[0]?.author?.display_name || 'Research Scholar',
+              publishedAt: w.publication_date ? new Date(w.publication_date).toISOString() : new Date().toISOString(),
+              category: 'research',
+              tags: ['scholarly', 'research', 'openalex', 'peer-reviewed'],
+              sourceType: 'research',
+              externalId: w.id ? String(w.id).replace('https://openalex.org/', '') : undefined
+            }));
+          }
+          break;
+        }
+        case 'structured_web_extractor': {
+          const urlsToExtract = targetUrl
+            ? [targetUrl]
+            : [
+                'https://openai.com/news/',
+                'https://blog.google/technology/ai/',
+                'https://www.anthropic.com/news',
+                'https://huggingface.co/blog'
+              ];
+
+          for (const u of urlsToExtract) {
+            if (signal?.aborted) break;
+            try {
+              const page = await discoveryProtocol.extractArticlePage(u, signal);
+              if (page && page.title && page.url) {
+                rawItems.push({
+                  title: page.title,
+                  url: page.url,
+                  description: page.description || `Extracted structured dispatch from ${u}`,
+                  imageUrl: page.imageUrl || null,
+                  sourceId: 'structured_web_extractor',
+                  sourceName: 'Structured Web Extractor',
+                  publisherName: page.publisherName || new URL(u).hostname,
+                  author: page.author || 'AI Editorial Staff',
+                  publishedAt: page.publishedAt || new Date().toISOString(),
+                  category: 'ai',
+                  tags: ['structured-data', 'schema-org', 'json-ld', 'research'],
+                  sourceType: 'news'
+                });
+              }
+            } catch {}
           }
           break;
         }
