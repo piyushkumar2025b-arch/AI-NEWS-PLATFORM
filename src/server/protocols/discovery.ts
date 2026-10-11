@@ -138,7 +138,7 @@ export class DiscoveryProtocol {
   async extractArticlePage(url: string, signal?: AbortSignal): Promise<ExtractedPageArticle | null> {
     try {
       const res = await httpClient.get(url, {
-        timeoutMs: 7000,
+        timeoutMs: 3500,
         signal,
         sourceId: 'article_extractor'
       });

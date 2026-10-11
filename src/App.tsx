@@ -32,6 +32,11 @@ import {
 
 type SectionTab = 'for_you' | 'frontier' | 'research' | 'community' | 'releases' | 'media' | 'saved';
 
+// In-memory feed cache for 0ms instant tab transitions and conditional ETag revalidation
+const clientFeedCache = new Map<string, { articles: Article[]; etag?: string }>();
+// In-memory search cache to eliminate keystroke re-querying
+const clientSearchCache = new Map<string, Article[]>();
+
 export default function App() {
   // Navigation & View states
   const [activeTab, setActiveTab] = useState<SectionTab>('for_you');
@@ -110,7 +115,6 @@ export default function App() {
 
   const fetchArticles = useCallback(async () => {
     try {
-      setLoading(true);
       setError(null);
 
       let url = '/api/v1/news?limit=120';
@@ -140,13 +144,41 @@ export default function App() {
         url += `&tag=${encodeURIComponent(selectedTopicTag)}`;
       }
 
-      const res = await fetch(url);
-      if (!res.ok) {
-        throw new Error(`Failed to load dispatches (HTTP ${res.status})`);
+      const cacheKey = `${url}:${savedTabKey}`;
+      const cached = clientFeedCache.get(cacheKey);
+
+      // Fast SWR hit: immediately show cached articles with 0 latency
+      if (cached && cached.articles.length > 0) {
+        setArticles(cached.articles);
+        setLoading(false);
+      } else {
+        setLoading(true);
       }
 
+      const headers: Record<string, string> = {};
+      if (cached?.etag) {
+        headers['If-None-Match'] = cached.etag;
+      }
+
+      const res = await fetch(url, { headers });
+
+      // Conditional 304: server indicates data has not changed, 0 payload download
+      if (res.status === 304 && cached) {
+        setArticles(cached.articles);
+        setLoading(false);
+        return;
+      }
+
+      if (!res.ok) {
+        if (!cached) throw new Error(`Failed to load dispatches (HTTP ${res.status})`);
+        return;
+      }
+
+      const etag = res.headers.get('etag') || undefined;
       const json = await res.json();
       const list: Article[] = Array.isArray(json.data) ? json.data : Array.isArray(json) ? json : [];
+
+      clientFeedCache.set(cacheKey, { articles: list, etag });
       setArticles(list);
     } catch (err: any) {
       console.error('Error loading news feed:', err);
@@ -192,10 +224,18 @@ export default function App() {
     }
   }, [fetchArticles, searchQuery]);
 
-  // Live full-corpus search across all dispatches with in-flight cancellation
+  // Live full-corpus search across all dispatches with in-flight cancellation and caching
   useEffect(() => {
     const q = searchQuery.trim();
     if (!q) return;
+
+    // Check instant client cache for 0ms query response
+    const cachedSearch = clientSearchCache.get(q.toLowerCase());
+    if (cachedSearch) {
+      setArticles(cachedSearch);
+      setLoading(false);
+      return;
+    }
 
     const controller = new AbortController();
     const timer = setTimeout(async () => {
@@ -207,6 +247,7 @@ export default function App() {
         if (res.ok) {
           const json = await res.json();
           const list: Article[] = Array.isArray(json.data) ? json.data : [];
+          clientSearchCache.set(q.toLowerCase(), list);
           setArticles(list);
         }
       } catch (err: any) {
@@ -216,7 +257,7 @@ export default function App() {
       } finally {
         setLoading(false);
       }
-    }, 280);
+    }, 200);
 
     return () => {
       clearTimeout(timer);

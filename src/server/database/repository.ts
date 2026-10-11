@@ -17,6 +17,8 @@ export class NewsRepository {
   private canonicalUrlIndex: Map<string, string> = new Map();
   private normalizedUrlIndex: Map<string, string> = new Map();
   private externalIdIndex: Map<string, string> = new Map();
+  private externalIdOnlyIndex: Map<string, string> = new Map();
+  private contentHashIndex: Map<string, string> = new Map();
   private titleFingerprintIndex: Map<string, string> = new Map();
   private titleInvertedIndex: Map<string, Set<string>> = new Map();
   private sortedChronologicalArticles: Article[] = [];
@@ -435,6 +437,10 @@ export class NewsRepository {
     }
     if (article.external_id) {
       this.externalIdIndex.set(`${article.source_id}:${article.external_id}`, article.id);
+      this.externalIdOnlyIndex.set(article.external_id, article.id);
+    }
+    if (article.content_hash) {
+      this.contentHashIndex.set(article.content_hash, article.id);
     }
     if (article.title) {
       const fp = generateTitleFingerprint(article.title);
@@ -579,6 +585,10 @@ export class NewsRepository {
     if (byCanonical) return this.articles.get(byCanonical);
     const byNormalized = this.normalizedUrlIndex.get(cleanId);
     if (byNormalized) return this.articles.get(byNormalized);
+    const byExtOnly = this.externalIdOnlyIndex.get(cleanId);
+    if (byExtOnly) return this.articles.get(byExtOnly);
+    const byHash = this.contentHashIndex.get(cleanId);
+    if (byHash) return this.articles.get(byHash);
     for (const art of this.articles.values()) {
       if (art.external_id === cleanId || art.content_hash === cleanId) {
         return art;

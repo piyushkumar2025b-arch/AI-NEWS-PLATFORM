@@ -523,27 +523,33 @@ export class MultiTechniqueService {
                 'https://huggingface.co/blog'
               ];
 
-          for (const u of urlsToExtract) {
-            if (signal?.aborted) break;
-            try {
-              const page = await discoveryProtocol.extractArticlePage(u, signal);
-              if (page && page.title && page.url) {
-                rawItems.push({
-                  title: page.title,
-                  url: page.url,
-                  description: page.description || `Extracted structured dispatch from ${u}`,
-                  imageUrl: page.imageUrl || null,
-                  sourceId: 'structured_web_extractor',
-                  sourceName: 'Structured Web Extractor',
-                  publisherName: page.publisherName || new URL(u).hostname,
-                  author: page.author || 'AI Editorial Staff',
-                  publishedAt: page.publishedAt || new Date().toISOString(),
-                  category: 'ai',
-                  tags: ['structured-data', 'schema-org', 'json-ld', 'research'],
-                  sourceType: 'news'
-                });
-              }
-            } catch {}
+          const pageResults = await Promise.allSettled(
+            urlsToExtract.map(async (u) => {
+              if (signal?.aborted) return null;
+              return discoveryProtocol.extractArticlePage(u, signal);
+            })
+          );
+
+          for (let i = 0; i < pageResults.length; i++) {
+            const r = pageResults[i];
+            const u = urlsToExtract[i];
+            if (r.status === 'fulfilled' && r.value && r.value.title && r.value.url) {
+              const page = r.value;
+              rawItems.push({
+                title: page.title,
+                url: page.url,
+                description: page.description || `Extracted structured dispatch from ${u}`,
+                imageUrl: page.imageUrl || null,
+                sourceId: 'structured_web_extractor',
+                sourceName: 'Structured Web Extractor',
+                publisherName: page.publisherName || new URL(u).hostname,
+                author: page.author || 'AI Editorial Staff',
+                publishedAt: page.publishedAt || new Date().toISOString(),
+                category: 'ai',
+                tags: ['structured-data', 'schema-org', 'json-ld', 'research'],
+                sourceType: 'news'
+              });
+            }
           }
           break;
         }

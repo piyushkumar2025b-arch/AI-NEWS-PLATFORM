@@ -136,6 +136,7 @@ export const ArticleCard: React.FC<ArticleCardProps> = React.memo(({
                 sourceId={article.source_id}
                 domain={article.domain}
                 aspectRatio="video"
+                priority={true}
                 className="w-full transform group-hover:scale-[1.01] transition-transform duration-300"
               />
               {isVideo && (

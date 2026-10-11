@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Video,
   Play,
@@ -11,16 +11,13 @@ import { MediaAsset } from '../types.js';
 import {
   isLowQualityMedia,
   upgradeMediaQuality,
-  extractYouTubeId,
-  getYouTubeThumbnailHierarchy
+  extractYouTubeId
 } from '../utils/mediaQuality.js';
-import {
-  getEditorialImageCandidates,
-  getEditorialImage
-} from '../utils/editorialMedia.js';
+import { getEditorialImage } from '../utils/editorialMedia.js';
 import { useInView } from '../utils/useInView.js';
+import { resolvePublisherMediaBatched, getCachedPublisherMedia } from '../utils/mediaBatchResolver.js';
 
-interface MediaRendererProps {
+export interface MediaRendererProps {
   media?: MediaAsset[];
   fallbackImageUrl?: string | null;
   articleUrl?: string | null;
@@ -32,28 +29,11 @@ interface MediaRendererProps {
   className?: string;
   aspectRatio?: 'video' | 'square' | 'auto';
   showEditorialFallback?: boolean;
+  priority?: boolean;
 }
 
-// Fast session cache for verified successful images (0-latency re-renders)
+// Global session set of successfully loaded images for 0ms re-render transitions
 const loadedImagesCache = new Set<string>();
-// In-memory cache for resolved OpenGraph media (avoids duplicate network calls)
-const clientResolvedMediaCache = new Map<string, string | null>();
-const clientInFlightResolutions = new Map<string, Promise<string | null>>();
-
-// Determine if URL requires immediate server-side tunneling
-function requiresImmediateTunneling(url: string): boolean {
-  if (!url || url.startsWith('/') || url.startsWith('data:')) return false;
-  try {
-    const parsed = new URL(url);
-    // Mixed content (http image on https page) must be proxied to prevent browser block
-    if (typeof window !== 'undefined' && window.location.protocol === 'https:' && parsed.protocol === 'http:') {
-      return true;
-    }
-    return false;
-  } catch {
-    return false;
-  }
-}
 
 export const MediaRenderer: React.FC<MediaRendererProps> = ({
   media,
@@ -66,8 +46,16 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
   domain,
   className = '',
   aspectRatio = 'video',
-  showEditorialFallback = true
+  showEditorialFallback = true,
+  priority = false
 }) => {
+  // Viewport intersection observer (bypassed if priority=true for hero LCP)
+  const { ref: containerRef, isInView: observerInView } = useInView({
+    rootMargin: '350px 0px',
+    triggerOnce: true
+  });
+  const isInView = priority || observerInView;
+
   // Find media assets by type
   const videoAsset = media?.find(m => m.type === 'video');
   const audioAsset = media?.find(m => m.type === 'audio');
@@ -78,242 +66,137 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
   );
   const documentAsset = media?.find(m => m.type === 'document');
 
-  // Detect YouTube video ID from articleUrl, video asset, domain, or fallback URL
+  // Detect YouTube video ID
   const allMediaUrls = [articleUrl, videoAsset?.url, fallbackImageUrl, ...(media || []).map(m => m.url)].filter(Boolean).join(' ');
   const ytVideoId = extractYouTubeId(allMediaUrls);
 
-  // Compute prioritized genuine image candidates list (strictly real media)
-  const imageCandidates = useMemo<string[]>(() => {
+  // Compute prioritized direct genuine candidates list
+  const directCandidates = useMemo<string[]>(() => {
     const candidates: string[] = [];
 
-    // 1. If YouTube video, prioritize hqdefault (100% available, 0-latency) then maxresdefault
+    // 1. YouTube video thumbnails
     if (ytVideoId) {
       candidates.push(`https://i.ytimg.com/vi/${ytVideoId}/hqdefault.jpg`);
       candidates.push(`https://i.ytimg.com/vi/${ytVideoId}/maxresdefault.jpg`);
     }
 
-    // 2. If GitHub repo URL, extract official OpenGraph repo card
+    // 2. GitHub repo OpenGraph card
     const ghMatch = (articleUrl || '').match(/^https?:\/\/github\.com\/([a-zA-Z0-9._-]+)\/([a-zA-Z0-9._-]+)(?:\/|$)/i);
     if (ghMatch && !['features', 'topics', 'trending', 'collections', 'events', 'pricing', 'about', 'login', 'signup'].includes(ghMatch[1].toLowerCase())) {
       candidates.push(`https://opengraph.githubassets.com/1/${ghMatch[1]}/${ghMatch[2]}`);
     }
 
-    // 3. Try genuine image asset or fallback URL with quality upgrades (strictly real media, no stock photos)
+    // 3. Genuine image asset or fallback URL
     let rawImage = imageAsset?.url || fallbackImageUrl;
     if (rawImage && !isLowQualityMedia(rawImage) && !rawImage.startsWith('/assets/editorial/')) {
-      if (rawImage.startsWith('http://')) {
-        rawImage = rawImage.replace('http://', 'https://');
-      }
+      if (rawImage.startsWith('http://')) rawImage = rawImage.replace('http://', 'https://');
       const upgraded = upgradeMediaQuality(rawImage);
-      if (upgraded && !candidates.includes(upgraded)) {
-        candidates.push(upgraded);
-      }
-      if (rawImage && upgraded !== rawImage && !candidates.includes(rawImage)) {
-        candidates.push(rawImage);
-      }
+      if (upgraded && !candidates.includes(upgraded)) candidates.push(upgraded);
+      if (rawImage && upgraded !== rawImage && !candidates.includes(rawImage)) candidates.push(rawImage);
     }
 
-    // 4. Check any other images in media array
+    // 4. Other images in media array
     if (media) {
       for (const m of media) {
         if (m.type === 'image' && m.url && !isLowQualityMedia(m.url) && !m.url.startsWith('/assets/editorial/')) {
           let u = m.url;
           if (u.startsWith('http://')) u = u.replace('http://', 'https://');
           const up = upgradeMediaQuality(u) || u;
-          if (up && !candidates.includes(up)) {
-            candidates.push(up);
-          }
+          if (up && !candidates.includes(up)) candidates.push(up);
         }
       }
     }
 
-    // 5. Authentic editorial photography fallback to guarantee no empty layout collapse
-    if (showEditorialFallback) {
-      const fallback = getEditorialImage(title, category, sourceId, domain);
-      if (fallback && !candidates.includes(fallback)) {
-        candidates.push(fallback);
-      }
-    }
-
     return candidates;
-  }, [ytVideoId, imageAsset?.url, fallbackImageUrl, media, articleUrl, showEditorialFallback, title, category, sourceId, domain]);
+  }, [ytVideoId, imageAsset?.url, fallbackImageUrl, media, articleUrl]);
 
-  const { ref: containerRef, isInView } = useInView({ rootMargin: '300px 0px', triggerOnce: true });
+  // Editorial fallback candidate
+  const editorialFallback = useMemo(() => {
+    return showEditorialFallback ? getEditorialImage(title, category, sourceId, domain) : null;
+  }, [showEditorialFallback, title, category, sourceId, domain]);
 
+  const [resolvedImageUrl, setResolvedImageUrl] = useState<string | null>(() => {
+    return articleUrl ? getCachedPublisherMedia(articleUrl) || null : null;
+  });
   const [candidateIndex, setCandidateIndex] = useState<number>(0);
   const [imageLoaded, setImageLoaded] = useState<boolean>(false);
   const [isPlayingVideo, setIsPlayingVideo] = useState<boolean>(false);
-  const [resolvedImageUrl, setResolvedImageUrl] = useState<string | null>(null);
-  const imgRef = React.useRef<HTMLImageElement>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
 
-  // If no image candidates exist upfront, dynamically resolve the REAL OpenGraph image from the publisher URL lazily
+  // Lazy Batched OpenGraph Resolution: only triggers when card is in/near viewport
   useEffect(() => {
-    if (!isInView || imageCandidates.length > 0 || !articleUrl || !articleUrl.startsWith('http')) return;
-
-    const cleanUrl = articleUrl.trim();
-    if (clientResolvedMediaCache.has(cleanUrl)) {
-      const cached = clientResolvedMediaCache.get(cleanUrl);
-      if (cached) setResolvedImageUrl(cached);
-      return;
-    }
+    if (!isInView || directCandidates.length > 0 || !articleUrl || !articleUrl.startsWith('http')) return;
 
     let active = true;
-    let inFlight = clientInFlightResolutions.get(cleanUrl);
-    if (!inFlight) {
-      const resolveUrl = `/api/v1/media/resolve?url=${encodeURIComponent(cleanUrl)}&title=${encodeURIComponent(title || '')}`;
-      inFlight = fetch(resolveUrl)
-        .then(res => res.json())
-        .then(data => {
-          const img = (data.success && data.imageUrl && !data.imageUrl.startsWith('/assets/editorial/')) ? data.imageUrl : null;
-          clientResolvedMediaCache.set(cleanUrl, img);
-          clientInFlightResolutions.delete(cleanUrl);
-          return img;
-        })
-        .catch(() => {
-          clientResolvedMediaCache.set(cleanUrl, null);
-          clientInFlightResolutions.delete(cleanUrl);
-          return null;
-        });
-      clientInFlightResolutions.set(cleanUrl, inFlight);
-    }
-
-    inFlight.then(img => {
-      if (active && img) {
-        let clean = img;
-        if (clean.startsWith('http://')) clean = clean.replace('http://', 'https://');
-        setResolvedImageUrl(clean);
-      }
-    });
+    resolvePublisherMediaBatched(articleUrl, title)
+      .then(url => {
+        if (active && url) {
+          setResolvedImageUrl(url);
+        }
+      })
+      .catch(() => {});
 
     return () => { active = false; };
-  }, [isInView, articleUrl, imageCandidates.length, title]);
+  }, [isInView, directCandidates.length, articleUrl, title]);
 
-  // Reset state when input candidates change
+  // Reset indices on candidate list changes
   useEffect(() => {
     setCandidateIndex(0);
     setIsPlayingVideo(false);
-  }, [imageCandidates[0]]);
+  }, [directCandidates[0]]);
 
-  const currentRawUrl = imageCandidates[candidateIndex] || resolvedImageUrl || null;
-  const rawDisplaySrc = currentRawUrl;
+  const aspectClass =
+    aspectRatio === 'video' ? 'aspect-video' : aspectRatio === 'square' ? 'aspect-square' : 'h-full w-full';
 
-  // Upgrade HTTP to HTTPS directly to eliminate mixed content blocking and proxy roundtrips
-  const displaySrc = useMemo(() => {
-    if (!rawDisplaySrc) return null;
-    let url = rawDisplaySrc.trim();
-    if (url.startsWith('http://')) {
-      url = url.replace('http://', 'https://');
+  // Compute all available candidates in order: direct -> resolved -> editorial fallback
+  const fullCandidatesList = useMemo(() => {
+    const list = [...directCandidates];
+    if (resolvedImageUrl && !list.includes(resolvedImageUrl)) {
+      list.push(resolvedImageUrl);
     }
-    return url;
-  }, [rawDisplaySrc]);
-
-  const handleImageLoad = () => {
-    setImageLoaded(true);
-    if (displaySrc) loadedImagesCache.add(displaySrc);
-  };
-
-  const handleImageError = () => {
-    // Instantly advance to next candidate in waterfall
-    if (candidateIndex + 1 < imageCandidates.length) {
-      setCandidateIndex(prev => prev + 1);
-      return;
+    if (editorialFallback && !list.includes(editorialFallback)) {
+      list.push(editorialFallback);
     }
-    setCandidateIndex(imageCandidates.length);
-  };
+    return list;
+  }, [directCandidates, resolvedImageUrl, editorialFallback]);
+
+  const activeSrc = fullCandidatesList[candidateIndex] || null;
 
   // Immediate cache hit detection
   useEffect(() => {
-    if (displaySrc && loadedImagesCache.has(displaySrc)) {
+    if (activeSrc && loadedImagesCache.has(activeSrc)) {
       setImageLoaded(true);
     }
     if (imgRef.current && imgRef.current.complete && imgRef.current.naturalWidth > 0) {
       setImageLoaded(true);
     }
-  }, [displaySrc]);
+  }, [activeSrc]);
 
-  const aspectClass =
-    aspectRatio === 'video' ? 'aspect-video' : aspectRatio === 'square' ? 'aspect-square' : 'h-full w-full';
+  const handleImageLoad = () => {
+    setImageLoaded(true);
+    if (activeSrc) loadedImagesCache.add(activeSrc);
+  };
 
-  const finalSrc = displaySrc;
+  const handleImageError = () => {
+    if (candidateIndex + 1 < fullCandidatesList.length) {
+      setCandidateIndex(prev => prev + 1);
+    }
+  };
 
-  // Determine media badge label & style
-  let badgeLabel = 'News';
-  let badgeColor = 'bg-stone-900/80 text-stone-100 border border-white/10';
-  if (sourceId?.startsWith('youtube')) {
-    badgeLabel = 'YouTube HD';
-    badgeColor = 'bg-red-950/80 text-red-200 border border-red-500/30';
-  } else if (sourceId === 'github') {
-    badgeLabel = 'GitHub Repo';
-    badgeColor = 'bg-emerald-950/80 text-emerald-300 border border-emerald-500/30';
-  } else if (sourceId === 'huggingface') {
-    badgeLabel = 'AI Model';
-    badgeColor = 'bg-amber-950/80 text-amber-300 border border-amber-500/30';
-  } else if (sourceId === 'hf_papers') {
-    badgeLabel = 'Daily Paper';
-    badgeColor = 'bg-amber-950/80 text-amber-300 border border-amber-500/30';
-  } else if (sourceId === 'deepmind') {
-    badgeLabel = 'Google DeepMind';
-    badgeColor = 'bg-blue-950/80 text-blue-300 border border-blue-500/30';
-  } else if (sourceId === 'openai') {
-    badgeLabel = 'OpenAI';
-    badgeColor = 'bg-emerald-950/80 text-emerald-300 border border-emerald-500/30';
-  } else if (sourceId === 'techcrunch_ai') {
-    badgeLabel = 'TechCrunch AI';
-    badgeColor = 'bg-green-950/80 text-green-300 border border-green-500/30';
-  } else if (sourceId === 'venturebeat_ai') {
-    badgeLabel = 'VentureBeat AI';
-    badgeColor = 'bg-indigo-950/80 text-indigo-300 border border-indigo-500/30';
-  } else if (sourceId === 'theverge_ai') {
-    badgeLabel = 'The Verge AI';
-    badgeColor = 'bg-pink-950/80 text-pink-300 border border-pink-500/30';
-  } else if (sourceId === 'mit_tech_review') {
-    badgeLabel = 'MIT Review';
-    badgeColor = 'bg-rose-950/80 text-rose-300 border border-rose-500/30';
-  } else if (sourceId === 'arstechnica') {
-    badgeLabel = 'Ars Technica';
-    badgeColor = 'bg-orange-950/80 text-orange-300 border border-orange-500/30';
-  } else if (sourceId === 'hf_blog') {
-    badgeLabel = 'HF Blog';
-    badgeColor = 'bg-amber-950/80 text-amber-300 border border-amber-500/30';
-  } else if (sourceId === 'last_week_in_ai') {
-    badgeLabel = 'Last Week in AI';
-    badgeColor = 'bg-purple-950/80 text-purple-300 border border-purple-500/30';
-  } else if (sourceId === 'arxiv') {
-    badgeLabel = 'Research Paper';
-    badgeColor = 'bg-blue-950/80 text-blue-300 border border-blue-500/30';
-  } else if (sourceId === 'hackernews' || sourceId === 'lobsters' || sourceId === 'reddit') {
-    badgeLabel = 'Community';
-    badgeColor = 'bg-orange-950/80 text-orange-300 border border-orange-500/30';
-  } else if (sourceId === 'devto') {
-    badgeLabel = 'Article';
-    badgeColor = 'bg-sky-950/80 text-sky-300 border border-sky-500/30';
-  } else if (sourceId === 'bair_blog') {
-    badgeLabel = 'UC Berkeley BAIR';
-    badgeColor = 'bg-teal-950/80 text-teal-300 border border-teal-500/30';
-  } else if (sourceId === 'ai_news') {
-    badgeLabel = 'AI News';
-    badgeColor = 'bg-cyan-950/80 text-cyan-300 border border-cyan-500/30';
-  } else if (sourceId === 'ml_mastery') {
-    badgeLabel = 'ML Mastery';
-    badgeColor = 'bg-indigo-950/80 text-indigo-300 border border-indigo-500/30';
-  } else if (sourceId === 'towards_ai') {
-    badgeLabel = 'Towards AI';
-    badgeColor = 'bg-violet-950/80 text-violet-300 border border-violet-500/30';
-  } else if (sourceId === 'understanding_ai') {
-    badgeLabel = 'Understanding AI';
-    badgeColor = 'bg-amber-950/80 text-amber-300 border border-amber-500/30';
-  } else if (sourceId === 'analytics_vidhya') {
-    badgeLabel = 'Analytics Vidhya';
-    badgeColor = 'bg-blue-950/80 text-blue-300 border border-blue-500/30';
-  } else if (sourceId === 'turing_institute') {
-    badgeLabel = 'Turing Institute';
-    badgeColor = 'bg-purple-950/80 text-purple-300 border border-purple-500/30';
-  } else if (sourceId === 'fastcompany_ai') {
-    badgeLabel = 'Fast Company';
-    badgeColor = 'bg-rose-950/80 text-rose-300 border border-rose-500/30';
+  // 0. VIEWPORT LAZY GATE: If element is outside viewport, render zero-cost skeleton placeholder
+  if (!isInView) {
+    return (
+      <div
+        ref={containerRef}
+        className={`relative w-full overflow-hidden rounded-xs bg-stone-200/40 select-none ${aspectClass} ${className}`}
+        aria-hidden="true"
+      >
+        <div className="absolute inset-0 bg-stone-200/30 animate-pulse pointer-events-none" />
+      </div>
+    );
   }
 
-  // 1. Video Asset Rendering (Interactive YouTube / DailyMotion / HTML5 player)
+  // 1. VIDEO ASSET RENDERING
   if (videoAsset || ytVideoId) {
     const rawVideoUrl = videoAsset?.url || (ytVideoId ? `https://www.youtube.com/embed/${ytVideoId}` : '');
     const isYouTube = Boolean(ytVideoId) || rawVideoUrl.includes('youtube') || rawVideoUrl.includes('youtu.be');
@@ -328,113 +211,85 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
       : undefined;
 
     if (isPlayingVideo) {
-      if (isIframeEmbed) {
-        let embedUrl = rawVideoUrl;
-        if (isYouTube && ytVideoId) {
-          const currentOrigin = typeof window !== 'undefined' && window.location.origin ? window.location.origin : '';
-          const originParam = currentOrigin ? `&origin=${encodeURIComponent(currentOrigin)}` : '';
-          embedUrl = `https://www.youtube.com/embed/${ytVideoId}?autoplay=1&playsinline=1&rel=0${originParam}`;
-        } else {
-          const separator = embedUrl.includes('?') ? '&' : '?';
-          embedUrl = `${embedUrl}${separator}autoplay=1`;
-        }
-
-        return (
-          <div className={`relative group/player w-full overflow-hidden rounded-xl bg-black ${aspectClass} ${className}`}>
-            <iframe
-              src={embedUrl}
-              title={title}
-              className="h-full w-full border-0"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-              allowFullScreen
-              referrerPolicy="strict-origin-when-cross-origin"
-            />
-            <div className="absolute top-2 right-2 flex items-center gap-1.5 opacity-90 sm:opacity-0 sm:group-hover/player:opacity-100 transition-opacity bg-black/75 backdrop-blur-xs px-2 py-1 rounded-lg border border-white/10 z-10">
-              {watchUrl && (
-                <a
-                  href={watchUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1 text-[11px] font-medium text-stone-200 hover:text-red-400 transition-colors"
-                  title="Open video on external website"
-                >
-                  <ExternalLink className="h-3 w-3" />
-                  <span>{isYouTube ? 'YouTube' : 'Watch'}</span>
-                </a>
-              )}
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setIsPlayingVideo(false);
-                }}
-                className="p-1 text-stone-400 hover:text-white rounded transition-colors"
-                title="Close player"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          </div>
-        );
+      let embedUrl = rawVideoUrl;
+      if (isYouTube && ytVideoId) {
+        const currentOrigin = typeof window !== 'undefined' && window.location.origin ? window.location.origin : '';
+        const originParam = currentOrigin ? `&origin=${encodeURIComponent(currentOrigin)}` : '';
+        embedUrl = `https://www.youtube.com/embed/${ytVideoId}?autoplay=1&playsinline=1&rel=0${originParam}`;
+      } else {
+        const separator = embedUrl.includes('?') ? '&' : '?';
+        embedUrl = `${embedUrl}${separator}autoplay=1`;
       }
 
       return (
-        <div className={`relative w-full overflow-hidden rounded-xl bg-black ${aspectClass} ${className}`}>
-          <video
-            src={videoAsset?.url || rawVideoUrl}
-            controls
-            autoPlay
-            preload="auto"
-            className="h-full w-full object-contain"
+        <div
+          ref={containerRef}
+          className={`relative group/player w-full overflow-hidden rounded-xl bg-black ${aspectClass} ${className}`}
+        >
+          <iframe
+            src={embedUrl}
+            title={title}
+            className="h-full w-full border-0"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            allowFullScreen
+            referrerPolicy="strict-origin-when-cross-origin"
+          />
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsPlayingVideo(false);
+            }}
+            className="absolute top-2.5 right-2.5 z-30 flex h-7 w-7 items-center justify-center rounded-full bg-black/80 text-white hover:bg-black transition-colors border border-white/20 backdrop-blur-xs cursor-pointer shadow-md"
+            title="Close video"
           >
-            Your browser does not support HTML5 video.
-          </video>
+            <X className="h-4 w-4" />
+          </button>
         </div>
       );
     }
 
-    const videoThumbnail = finalSrc || (ytVideoId ? `https://i.ytimg.com/vi/${ytVideoId}/hqdefault.jpg` : null);
+    const videoThumbnail = activeSrc;
 
-    // Video preview with high-res 16:9 thumbnail and Play overlay
     return (
       <div
+        ref={containerRef}
         onClick={() => setIsPlayingVideo(true)}
         className={`group relative w-full overflow-hidden rounded-xl bg-stone-900 ${aspectClass} ${className} cursor-pointer select-none border border-stone-800/60 shadow-xs`}
       >
         {videoThumbnail ? (
           <img
+            ref={imgRef}
             src={videoThumbnail}
             alt={title}
             referrerPolicy="no-referrer"
-            loading="lazy"
+            loading={priority ? 'eager' : 'lazy'}
             decoding="async"
+            fetchPriority={priority ? 'high' : 'low'}
             className={`h-full w-full object-cover transition-all duration-300 group-hover:scale-[1.02] ${
-              imageLoaded ? 'opacity-100' : 'opacity-90'
+              imageLoaded ? 'opacity-100' : 'opacity-85'
             }`}
             onLoad={handleImageLoad}
             onError={handleImageError}
           />
         ) : (
-          <div className="h-full w-full bg-linear-to-br from-stone-900 via-stone-850 to-stone-950 flex flex-col justify-end p-6">
+          <div className="h-full w-full bg-gradient-to-br from-stone-900 via-stone-850 to-stone-950 flex flex-col justify-end p-6">
             <span className="text-white/80 font-editorial text-lg line-clamp-2">{title}</span>
           </div>
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent transition-colors group-hover:via-black/10" />
 
-        {/* Center Play Button */}
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-600 text-white shadow-xl ring-4 ring-black/30 transition-transform duration-200 group-hover:scale-110 group-active:scale-95">
             <Play className="h-5 w-5 fill-white ml-0.5" />
           </div>
         </div>
 
-        {/* Video Badge */}
         <span className="absolute top-2.5 left-2.5 inline-flex items-center gap-1.5 rounded-md bg-black/85 px-2 py-0.5 text-[11px] font-medium text-white backdrop-blur-xs border border-white/10 shadow-xs">
           <Video className="h-3 w-3 text-red-400" />
           <span>Video</span>
         </span>
 
-        {/* Open on external platform button */}
         {watchUrl && (
           <a
             href={watchUrl}
@@ -448,28 +303,28 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
             <span>Open</span>
           </a>
         )}
-
-        {/* Click to play hint on hover */}
-        <span className="absolute bottom-2.5 left-2.5 opacity-0 group-hover:opacity-100 transition-opacity text-[10px] text-stone-300 font-medium bg-black/80 px-2 py-0.5 rounded backdrop-blur-xs">
-          Click to play
-        </span>
       </div>
     );
   }
 
-  // 2. Audio Asset (Podcasts, Interviews)
+  // 2. AUDIO ASSET RENDERING
   if (audioAsset) {
     return (
-      <div className={`flex flex-col rounded-xl overflow-hidden border border-stone-200 bg-stone-900 shadow-xs ${className}`}>
-        {finalSrc && (
+      <div
+        ref={containerRef}
+        className={`flex flex-col rounded-xl overflow-hidden border border-stone-200 bg-stone-900 shadow-xs ${className}`}
+      >
+        {activeSrc && (
           <div className="relative aspect-[21/9] w-full overflow-hidden bg-stone-950">
             <img
-              src={finalSrc}
+              src={activeSrc}
               alt={title}
               referrerPolicy="no-referrer"
               loading="lazy"
+              decoding="async"
               className="h-full w-full object-cover opacity-85"
-              onError={() => setCandidateIndex(prev => prev + 1)}
+              onError={handleImageError}
+              onLoad={handleImageLoad}
             />
             <div className="absolute inset-0 bg-gradient-to-t from-stone-900 via-transparent to-transparent" />
             <span className="absolute top-2.5 left-2.5 inline-flex items-center gap-1 rounded-md bg-purple-950/90 text-purple-200 border border-purple-500/30 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider backdrop-blur-xs">
@@ -499,10 +354,13 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
     );
   }
 
-  // 3. Document / PDF Asset
+  // 3. DOCUMENT / RESEARCH PDF ASSET RENDERING
   if (documentAsset) {
     return (
-      <div className={`flex items-center justify-between rounded-xl border border-blue-100 bg-blue-50/60 p-4 ${className}`}>
+      <div
+        ref={containerRef}
+        className={`flex items-center justify-between rounded-xl border border-blue-100 bg-blue-50/60 p-4 ${className}`}
+      >
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-100 text-blue-700">
             <FileText className="h-5 w-5" />
@@ -524,9 +382,8 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
     );
   }
 
-  // 4. Primary Image Rendering
-  const finalImageSrc = displaySrc || (showEditorialFallback ? getEditorialImage(title, category, sourceId, domain) : null);
-  if (!finalImageSrc) return null;
+  // 4. PRIMARY IMAGE RENDERING
+  if (!activeSrc) return null;
 
   return (
     <div
@@ -535,16 +392,17 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({
     >
       <img
         ref={imgRef}
-        src={finalImageSrc}
+        src={activeSrc}
         alt={title || 'Article visual'}
         referrerPolicy="no-referrer"
-        loading="lazy"
+        loading={priority ? 'eager' : 'lazy'}
         decoding="async"
+        fetchPriority={priority ? 'high' : 'low'}
         width="640"
         height="360"
         onLoad={handleImageLoad}
         onError={handleImageError}
-        className={`h-full w-full object-cover transform-gpu transition-all duration-300 group-hover/media:scale-[1.015] ${
+        className={`h-full w-full object-cover transform-gpu transition-opacity duration-300 group-hover/media:scale-[1.015] ${
           imageLoaded ? 'opacity-100' : 'opacity-0'
         }`}
       />
